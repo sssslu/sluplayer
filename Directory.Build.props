@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Dev cache outside the project folder (vendor binaries, build output). -->
+    <SluDevDir>$(LOCALAPPDATA)\SluPlayerDev</SluDevDir>
+    <SluVendorDir>$(SluDevDir)\vendor</SluVendorDir>
+    <ArtifactsPath>$(SluDevDir)\artifacts</ArtifactsPath>
+  </PropertyGroup>
+</Project>

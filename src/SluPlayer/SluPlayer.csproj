@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Always self-contained: every SluPlayer.exe (debug or release) runs without installing .NET. -->
+    <SelfContained>true</SelfContained>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\SluPlayer.ico</ApplicationIcon>
+    <AssemblyName>SluPlayer</AssemblyName>
+    <RootNamespace>SluPlayer</RootNamespace>
+    <Product>SluPlayer</Product>
+    <Company>slu</Company>
+    <Description>SluPlayer - GPU accelerated media player and online video downloader</Description>
+    <Copyright>Copyright (c) 2026 slu</Copyright>
+    <Version>1.0.0</Version>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <TieredPGO>true</TieredPGO>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\**\*.png" />
+    <Resource Include="Assets\SluPlayer.ico" />
+  </ItemGroup>
+
+  <!-- Native engine + bundled tools from the dev vendor cache (see build\fetch-vendor.ps1). -->
+  <ItemGroup>
+    <None Include="$(SluVendorDir)\libmpv\libmpv-2.dll" Link="libmpv-2.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\libmpv\libmpv-2.dll')" />
+    <!-- yt-dlp: prefer the unpacked "onedir" build (3x faster startup than the single-file exe). -->
+    <None Include="$(SluVendorDir)\yt-dlp-win\**\*" LinkBase="tools\yt-dlp" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\yt-dlp-win\yt-dlp.exe')" />
+    <None Include="$(SluVendorDir)\yt-dlp\yt-dlp.exe" Link="tools\yt-dlp.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="!Exists('$(SluVendorDir)\yt-dlp-win\yt-dlp.exe') And Exists('$(SluVendorDir)\yt-dlp\yt-dlp.exe')" />
+    <None Include="$(SluVendorDir)\deno\deno.exe" Link="tools\deno.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\deno\deno.exe')" />
+    <!-- FFmpeg: the pinned "shared" build (small exes + av*.dll, what releases ship); the old static exes are a fallback. -->
+    <None Include="$(SluVendorDir)\ffmpeg-shared\*.exe;$(SluVendorDir)\ffmpeg-shared\*.dll" LinkBase="tools" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\ffmpeg-shared\ffmpeg.exe')" />
+    <None Include="$(SluVendorDir)\ffmpeg\ffmpeg.exe" Link="tools\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="!Exists('$(SluVendorDir)\ffmpeg-shared\ffmpeg.exe') And Exists('$(SluVendorDir)\ffmpeg\ffmpeg.exe')" />
+    <None Include="$(SluVendorDir)\ffmpeg\ffprobe.exe" Link="tools\ffprobe.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="!Exists('$(SluVendorDir)\ffmpeg-shared\ffmpeg.exe') And Exists('$(SluVendorDir)\ffmpeg\ffprobe.exe')" />
+    <!-- Khronos Vulkan loader: loaded only when Windows has none (MpvNative's static constructor). -->
+    <None Include="$(SluVendorDir)\vulkan\vulkan-1.dll" Link="vulkan\vulkan-1.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\vulkan\vulkan-1.dll')" />
+  </ItemGroup>
+
+</Project>

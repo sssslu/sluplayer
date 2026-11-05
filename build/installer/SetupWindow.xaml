@@ -1,0 +1,95 @@
+<Window x:Class="SluPlayer.Setup.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SluPlayer 설치" Width="560" SizeToContent="Height" ResizeMode="CanMinimize"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="True"
+        Background="{StaticResource Brush.Surface1}" Foreground="{StaticResource Brush.Text}"
+        FontFamily="{StaticResource Font.UI}" FontSize="14"
+        UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Display">
+    <Grid Margin="24,24,24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Orientation="Horizontal">
+            <Image Source="Assets/logo-64.png" Width="48" Height="48" RenderOptions.BitmapScalingMode="HighQuality" />
+            <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                <TextBlock x:Name="TitleText" Text="SluPlayer 설치" FontSize="22" FontWeight="SemiBold" />
+                <TextBlock x:Name="SubtitleText" Foreground="{StaticResource Brush.TextSecondary}" FontSize="13" Margin="0,2,0,0" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Pages -->
+        <Grid Grid.Row="1" Margin="0,24,0,0" MinHeight="184">
+            <StackPanel x:Name="OptionsPage">
+                <TextBlock Text="설치 위치" Foreground="{StaticResource Brush.TextSecondary}" FontSize="13" Margin="0,0,0,8" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="DirBox" Style="{StaticResource Field}" TextChanged="DirBox_TextChanged" />
+                    <Button x:Name="BrowseButton" Grid.Column="1" Content="찾아보기" Style="{StaticResource Btn.Secondary}" Margin="8,0,0,0" Click="Browse_Click" />
+                </Grid>
+                <TextBlock x:Name="SpaceText" Foreground="{StaticResource Brush.TextTertiary}" FontSize="12" Margin="0,8,0,0" />
+                <CheckBox x:Name="DesktopCheck" Content="바탕 화면 바로 가기" Style="{StaticResource Check}" Margin="0,20,0,0" />
+                <CheckBox x:Name="LaunchCheck" Content="설치 후 실행" Style="{StaticResource Check}" Margin="0,12,0,0" />
+                <Border x:Name="UpdateNote" Background="{StaticResource Brush.InfoSubtle}" CornerRadius="6" Padding="12,8" Margin="0,20,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="UpdateText" FontSize="13" TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+
+            <StackPanel x:Name="UninstallPage" Visibility="Collapsed">
+                <TextBlock Text="SluPlayer를 제거하시겠습니까?" FontSize="15" TextWrapping="Wrap" />
+                <TextBlock x:Name="UninstallDirText" Foreground="{StaticResource Brush.TextTertiary}" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <CheckBox x:Name="RemoveDataCheck" Content="설정과 재생 기록도 삭제" Style="{StaticResource Check}" Margin="0,24,0,0" />
+                <TextBlock Text="다운로드한 파일은 유지" Foreground="{StaticResource Brush.TextTertiary}" FontSize="12" Margin="30,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel x:Name="ProgressPage" Visibility="Collapsed" VerticalAlignment="Center">
+                <TextBlock x:Name="ProgressText" Text="준비 중…" FontSize="15" />
+                <ProgressBar x:Name="Bar" Style="{StaticResource Progress}" Margin="0,16,0,0" Minimum="0" Maximum="1" />
+                <TextBlock x:Name="ProgressDetail" Foreground="{StaticResource Brush.TextTertiary}" FontSize="12" Margin="0,10,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <StackPanel x:Name="DonePage" Visibility="Collapsed" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource Brush.Success}">
+                        <TextBlock Text="&#xE73E;" FontFamily="{StaticResource Font.Icons}" FontSize="16" Foreground="{StaticResource Brush.Bg}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock x:Name="DoneText" FontSize="18" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock x:Name="DoneDetail" Foreground="{StaticResource Brush.TextSecondary}" FontSize="13" Margin="44,8,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Error -->
+        <Border x:Name="ErrorBanner" Grid.Row="2" Background="{StaticResource Brush.DangerSubtle}" CornerRadius="6" Padding="12,10" Margin="0,16,0,0" Visibility="Collapsed">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="&#xE783;" FontFamily="{StaticResource Font.Icons}" Foreground="{StaticResource Brush.Danger}" FontSize="16" Margin="0,1,10,0" />
+                <TextBlock x:Name="ErrorText" Grid.Column="1" TextWrapping="Wrap" FontSize="13" />
+            </Grid>
+        </Border>
+
+        <!-- Footer -->
+        <Grid Grid.Row="3" Margin="0,24,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button x:Name="SecondaryButton" Content="취소" Style="{StaticResource Btn.Secondary}" Click="Secondary_Click" IsCancel="True" />
+                <Button x:Name="PrimaryButton" Content="설치" Style="{StaticResource Btn.Primary}" Margin="8,0,0,0" Click="Primary_Click" IsDefault="True" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

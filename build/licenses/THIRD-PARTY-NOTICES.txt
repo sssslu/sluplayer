@@ -1,0 +1,93 @@
+SluPlayer - 오픈소스 구성 요소와 라이선스 / Third-party components and licenses
+================================================================================
+
+SluPlayer는 아래 오픈소스 프로그램을 함께 배포합니다. 각 프로그램의 라이선스 원문은
+이 폴더의 하위 폴더에 있습니다. GPL 구성 요소의 소스 코드 위치는 아래 "Source code"
+항목에 있습니다.
+
+SluPlayer ships the open-source components listed below. The full license texts are in
+the sub-folders of this folder.
+
+SluPlayer itself: Copyright (c) 2026 slu. License: GPL-3.0 (SluPlayer-LICENSE.txt in this
+folder). Source code: https://github.com/sssslu/sluplayer
+
+
+1. Components
+-------------
+
+mpv (libmpv-2.dll)                                                   folder: mpv\
+  Version : mpv v0.41.0-1227-ge471496c5, Windows build by shinchiro/mpv-winbuild-cmake
+            (release 20261021, x86_64)
+  License : GPL-2.0-or-later (see mpv\Copyright.txt, mpv\LICENSE.GPL.txt, mpv\LICENSE.LGPL.txt).
+            libmpv-2.dll is statically linked with FFmpeg built with --enable-gpl
+            --enable-version3, so the DLL as a whole is distributed under GPL-3.0-or-later.
+            It also contains libplacebo, libass, FreeType, HarfBuzz, FriBidi, dav1d, LuaJIT,
+            mujs, libarchive, libbluray, libdvdnav, uchardet, lcms2, shaderc, SPIRV-Cross,
+            zimg, rubberband, OpenAL Soft, libcurl, SDL2, x264, x265, libvpx, libaom,
+            SVT-AV1 and other libraries, all under GPL-compatible licenses.
+
+FFmpeg (tools\ffmpeg.exe, tools\ffprobe.exe, tools\av*.dll, tools\sw*.dll)   folder: ffmpeg\
+  Version : N-127043-g5a54fcf75e, win64 "gpl shared" build by yt-dlp/FFmpeg-Builds
+            (release autobuild-2026-09-30-18-57)
+  License : GPL-3.0-or-later (built with --enable-gpl --enable-version3; see
+            ffmpeg\COPYING.GPLv3.txt and ffmpeg\LICENSE.md). The build includes x264,
+            x265, libvpx, libaom, SVT-AV1, dav1d, LAME, Opus, Vorbis and other libraries
+            under GPL-compatible licenses. libfdk-aac and other non-free parts are NOT
+            included.
+
+yt-dlp (tools\yt-dlp\yt-dlp.exe and tools\yt-dlp\_internal\)       folder: yt-dlp\
+  Version : 2026.10.26 (official Windows "onedir" build, yt-dlp_win.zip)
+  License : The Unlicense (yt-dlp\LICENSE.txt). The program bundles Python and other
+            third-party packages; their licenses are in yt-dlp\THIRD_PARTY_LICENSES.txt
+            (also shipped as tools\yt-dlp\_internal\THIRD_PARTY_LICENSES.txt).
+
+Deno (tools\deno.exe)                                                folder: deno\
+  Version : 2.9.8 (official x86_64-pc-windows-msvc build)
+  License : MIT (deno\LICENSE.md). Deno includes V8 and Rust crates under permissive
+            licenses; see https://github.com/denoland/deno .
+
+Vulkan loader (vulkan\vulkan-1.dll)                                  folder: vulkan-loader\
+  Version : 1.4.363.0, official LunarG "Vulkan Runtime Components" build (signed by LunarG)
+  License : Apache-2.0 and MIT (vulkan-loader\VulkanRT-License.txt, vulkan-loader\Apache-2.0.txt).
+            Only used on PCs whose graphics driver did not install a Vulkan loader.
+
+.NET 10 runtime and Windows Desktop (WPF) runtime (inside SluPlayer.exe and the
+*_cor3.dll files)                                                    folder: dotnet\
+  Version : 10.0.14
+  License : MIT (dotnet\LICENSE.txt) with third-party notices in dotnet\*NOTICES*.txt.
+
+CommunityToolkit.Mvvm (inside SluPlayer.exe)                         folder: communitytoolkit-mvvm\
+  Version : 8.4.2
+  License : MIT (communitytoolkit-mvvm\License.md, ThirdPartyNotices.txt).
+
+Microsoft Edge WebView2 SDK (inside SluPlayer.exe and WebView2Loader.dll)   folder: webview2\
+  Version : 1.0.4314.35
+  License : see webview2\LICENSE.txt and webview2\NOTICE.txt. The WebView2 Runtime itself
+            is part of Windows and is not shipped with SluPlayer.
+
+
+2. Source code (GPL components)
+-------------------------------
+
+The complete corresponding source code of the GPL-licensed binaries is available at no
+charge from the following locations:
+
+  mpv          https://github.com/mpv-player/mpv/tree/e471496c56f0f49c133bd88b50aed62b845f1909
+  libmpv build https://github.com/shinchiro/mpv-winbuild-cmake (release 20261021: the build
+               recipes list every bundled library and its exact source revision)
+  FFmpeg       https://github.com/FFmpeg/FFmpeg/tree/5a54fcf75e
+  FFmpeg build https://github.com/yt-dlp/FFmpeg-Builds (tag autobuild-2026-09-30-18-57: build
+               scripts and the revisions of all bundled libraries)
+
+If one of these locations becomes unavailable, the distributor of this SluPlayer package
+will provide the corresponding source code on request for at least three years, for no
+more than the cost of physically performing the source distribution.
+
+
+3. Note on SluPlayer itself
+---------------------------
+
+SluPlayer loads libmpv-2.dll, which is GPL-licensed in this build. SluPlayer's own source
+code is available under the GNU GPL version 3 at https://github.com/sssslu/sluplayer .
+Anyone who distributes a modified SluPlayer must also make its source code available under
+the GNU GPL version 3.

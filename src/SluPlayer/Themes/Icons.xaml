@@ -1,0 +1,80 @@
+<!--
+    SluPlayer icon glyphs for the "Segoe Fluent Icons" font (fallback: "Segoe MDL2 Assets").
+    Every glyph below was checked visually against SegoeIcons.ttf (Windows 11).
+
+    Usage:
+      <Button Style="{StaticResource Btn.Icon}" Content="{StaticResource Icon.Settings}" ToolTip="설정"/>
+      <TextBlock FontFamily="{StaticResource Font.Icons}" Text="{StaticResource Icon.Folder}"/>
+      <MenuItem Header="열기" Icon="{StaticResource Icon.OpenFile}"/>   (string icons render with Font.Icons)
+      C# looks some keys up by name (PlayerMenu, ControlBarWindow, PageWindow, ...): search before removing one.
+
+    Notes:
+      * Media transport glyphs (Play/Pause/Stop/Previous/Next) use the SOLID variants, which read
+        better on video.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- ===== Media transport ===== -->
+    <sys:String x:Key="Icon.Play">&#xF5B0;</sys:String>
+    <sys:String x:Key="Icon.Pause">&#xF8AE;</sys:String>
+    <sys:String x:Key="Icon.Stop">&#xEE95;</sys:String>
+    <sys:String x:Key="Icon.Previous">&#xF8AC;</sys:String>
+    <sys:String x:Key="Icon.Next">&#xF8AD;</sys:String>
+
+    <!-- ===== Volume ===== -->
+    <sys:String x:Key="Icon.Volume">&#xE767;</sys:String>
+    <sys:String x:Key="Icon.Volume0">&#xE992;</sys:String>
+    <sys:String x:Key="Icon.Volume1">&#xE993;</sys:String>
+    <sys:String x:Key="Icon.Volume2">&#xE994;</sys:String>
+    <sys:String x:Key="Icon.Mute">&#xE74F;</sys:String>
+
+    <!-- ===== Playback options ===== -->
+    <sys:String x:Key="Icon.RepeatAll">&#xE8EE;</sys:String>
+    <sys:String x:Key="Icon.Speed">&#xEC4A;</sys:String>
+    <sys:String x:Key="Icon.Subtitles">&#xED1E;</sys:String>
+    <sys:String x:Key="Icon.AudioTrack">&#xE8D6;</sys:String>
+    <sys:String x:Key="Icon.Camera">&#xE722;</sys:String>
+    <sys:String x:Key="Icon.Rotate">&#xE7AD;</sys:String>
+    <sys:String x:Key="Icon.AspectRatio">&#xE799;</sys:String>
+
+    <!-- ===== Window / view ===== -->
+    <sys:String x:Key="Icon.FullScreen">&#xE740;</sys:String>
+    <sys:String x:Key="Icon.ExitFullScreen">&#xE73F;</sys:String>
+    <sys:String x:Key="Icon.Pin">&#xE718;</sys:String>
+    <sys:String x:Key="Icon.Minimize">&#xE921;</sys:String>
+    <sys:String x:Key="Icon.Maximize">&#xE922;</sys:String>
+    <sys:String x:Key="Icon.Restore">&#xE923;</sys:String>
+    <sys:String x:Key="Icon.ChromeClose">&#xE8BB;</sys:String>
+    <sys:String x:Key="Icon.Close">&#xE711;</sys:String>
+    <sys:String x:Key="Icon.Cancel">&#xE711;</sys:String>
+    <sys:String x:Key="Icon.Settings">&#xE713;</sys:String>
+    <sys:String x:Key="Icon.ListView">&#xE8FD;</sys:String>
+
+    <!-- ===== Media kinds / arrows ===== -->
+    <sys:String x:Key="Icon.Playlist">&#xE90B;</sys:String>
+    <sys:String x:Key="Icon.Video">&#xE714;</sys:String>
+    <sys:String x:Key="Icon.Music">&#xEC4F;</sys:String>
+    <sys:String x:Key="Icon.Youtube">&#xE786;</sys:String>
+    <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
+    <sys:String x:Key="Icon.ChevronRight">&#xE76C;</sys:String>
+
+    <!-- ===== Files ===== -->
+    <sys:String x:Key="Icon.Folder">&#xE8B7;</sys:String>
+    <sys:String x:Key="Icon.FolderOpen">&#xE838;</sys:String>
+    <sys:String x:Key="Icon.OpenFile">&#xE8E5;</sys:String>
+    <sys:String x:Key="Icon.Link">&#xE71B;</sys:String>
+    <sys:String x:Key="Icon.Download">&#xE896;</sys:String>
+
+    <!-- ===== Actions ===== -->
+    <sys:String x:Key="Icon.Add">&#xE710;</sys:String>
+    <sys:String x:Key="Icon.Delete">&#xE74D;</sys:String>
+    <sys:String x:Key="Icon.Refresh">&#xE72C;</sys:String>
+    <sys:String x:Key="Icon.CheckMark">&#xE73E;</sys:String>
+    <sys:String x:Key="Icon.Dash">&#xE73C;</sys:String>
+
+    <!-- ===== Status ===== -->
+    <sys:String x:Key="Icon.Warning">&#xE7BA;</sys:String>
+
+</ResourceDictionary>

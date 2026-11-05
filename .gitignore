@@ -1,0 +1,13 @@
+# Release output (published on GitHub Releases) and local archives
+dist/
+backup/
+
+# Build output (normally redirected to %LOCALAPPDATA%\SluPlayerDev by Directory.Build.props)
+bin/
+obj/
+artifacts/
+
+# IDE
+.vs/
+.vscode/
+*.user
