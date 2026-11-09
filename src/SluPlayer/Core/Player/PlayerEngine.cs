@@ -230,7 +230,12 @@ public sealed class PlayerEngine : ObservableObject
             double lastPos = Volatile.Read(ref _latestTimePos);
             _ui.BeginInvoke(() => OnEndFile(info, path, lastPos));
         };
-        mpv.PlaybackRestart += () => _ui.BeginInvoke(OnPlaybackRestart);
+        mpv.PlaybackRestart += () =>
+        {
+            // Decided on the event thread, before audio has played for long (late video start: reopen the file).
+            bool reopening = CheckVideoStartGap();
+            _ui.BeginInvoke(() => OnPlaybackRestart(reopening));
+        };
         mpv.QueueOverflow += () => _ui.BeginInvoke(ResyncAfterOverflow);
         mpv.Shutdown += () => _ui.BeginInvoke(() => MpvShutdown?.Invoke(this, EventArgs.Empty));
 
@@ -432,9 +437,10 @@ public sealed class PlayerEngine : ObservableObject
     {
         _resumedAt = 0;
         var mpv = _mpv;
-        if (mpv == null || !_settings.ResumePlayback) return;
-        var path = mpv.GetPropertyString("path");
-        if (string.IsNullOrEmpty(path)) return;
+        var path = mpv?.GetPropertyString("path");
+        if (mpv == null || string.IsNullOrEmpty(path)) return;
+        if (BeginGapLoad(mpv, path)) return; // reopened to fill a late video start: plays from the beginning
+        if (!_settings.ResumePlayback) return;
         // Respect an explicit start position (e.g. "start=" from a playlist entry).
         var explicitStart = mpv.GetPropertyString("file-local-options/start");
         if (!string.IsNullOrEmpty(explicitStart) && explicitStart != "none") return;
@@ -479,8 +485,10 @@ public sealed class PlayerEngine : ObservableObject
         FileLoaded?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnPlaybackRestart()
+    private void OnPlaybackRestart(bool reopening)
     {
+        // The file is being reopened (late video start): the reopened one reports its start instead.
+        if (reopening) return;
         if (_firstRestartPending)
         {
             _firstRestartPending = false;
@@ -537,9 +545,142 @@ public sealed class PlayerEngine : ObservableObject
         UpdateDerived();
     }
 
+    // =====================================================================
+    // Late video start
+    // =====================================================================
+    //
+    // Some recordings start their video after their audio (go2rtc dashcam clips wait up to ~1.5 s for a keyframe).
+    // mpv starts playback at the first video frame and drops the audio before it; other players play that audio over
+    // the held first frame. To do the same, such a file is reopened with a filter that fills the gap with copies of
+    // the first frame (ffmpeg fps, start_time=0) until playback has passed it. Only an open keeps that audio: a seek
+    // aligns the audio to the video keyframe, so a seek back into the gap (Home, replay, loop) reopens the file too.
+
+    private const double MinVideoStartGap = 0.25;
+    private const double GapLandSlack = 0.25;
+    private const string GapFillFilter = "@slugap:lavfi=[fps=fps=source_fps:start_time=0]";
+    private readonly object _gapLock = new();
+    private string? _gapPath;     // the loaded file starts its video _gapStart seconds after its audio
+    private double _gapStart;
+    private bool _gapReopening;   // a reopen of _gapPath was requested
+    private bool _gapFilling;     // the fill filter is on (this load)
+    private bool _gapRestarted;   // this load has started playing
+    private double? _seekTarget;  // the last seek this engine asked for, until playback restarts
+
+    /// <summary>Event thread, on_load. Returns true when this load is the reopen of a late-video file (filter on).</summary>
+    private bool BeginGapLoad(MpvClient mpv, string path)
+    {
+        bool reopen;
+        lock (_gapLock)
+        {
+            reopen = _gapReopening && _gapPath != null && SamePath(path, _gapPath);
+            _gapReopening = false;
+            _gapRestarted = false;
+            _seekTarget = null;
+            _gapFilling = reopen;
+            if (!reopen) _gapPath = null;
+        }
+        if (reopen) mpv.SetProperty("file-local-options/vf", GapFillFilter);
+        return reopen;
+    }
+
+    /// <summary>
+    /// Event thread, every playback restart. Returns true when it reopens the file: on the first start of a file whose
+    /// video starts late, and on a later seek that landed in the gap.
+    /// </summary>
+    private bool CheckVideoStartGap()
+    {
+        var mpv = _mpv;
+        if (mpv == null) return false;
+        double pos = mpv.GetPropertyDouble("time-pos") ?? 0;
+        bool first;
+        double? target;
+        lock (_gapLock)
+        {
+            first = !_gapRestarted;
+            _gapRestarted = true;
+            target = _seekTarget;
+            _seekTarget = null;
+            if (_gapReopening || first && _gapFilling) return false;
+            // A later restart is a seek. It went into the gap when this engine asked for a position before the first
+            // frame; a seek of mpv's own (loop-file) when it landed on that frame (read a little after it started).
+            if (!first && (_gapPath == null || (target is { } t ? t >= _gapStart : pos > _gapStart + GapLandSlack))) return false;
+        }
+        string? path = null;
+        if (first)
+        {
+            path = mpv.GetPropertyString("path");
+            if (path == null || !HasLateVideo(mpv, path, pos)) return false;
+            Log.Info($"video starts {pos:0.###} s after audio: reopening with the gap filled");
+        }
+        lock (_gapLock)
+        {
+            if (path != null) { _gapPath = path; _gapStart = pos; }
+            _gapReopening = true;
+        }
+        mpv.CommandAsync((err, _) =>
+        {
+            if (err >= 0) return;
+            lock (_gapLock) _gapReopening = false;
+            _ui.BeginInvoke(() => OnPlaybackRestart(false));
+        }, "playlist-play-index", "current");
+        return true;
+    }
+
+    /// <summary>First start of a local file with audio and real video that began <paramref name="pos"/> s in.</summary>
+    private static bool HasLateVideo(MpvClient mpv, string path, double pos)
+        => pos >= MinVideoStartGap && !MediaFormats.IsUrl(path)
+            && mpv.GetPropertyString("start") is null or "none" // not a resume or an explicit start position
+            && mpv.GetPropertyString("current-tracks/audio/id") != null
+            && mpv.GetPropertyString("current-tracks/video/image") == "no"
+            && mpv.GetPropertyString("current-tracks/video/albumart") == "no"
+            && mpv.GetPropertyDouble("container-fps") > 0; // the filter repeats frames at this rate
+
+    /// <summary>
+    /// Before every seek this engine asks for. A seek to the gap's end or later drops the fill filter first:
+    /// it would otherwise fill from 0 to the keyframe the seek lands on.
+    /// </summary>
+    private void NoteSeek(double target)
+    {
+        lock (_gapLock)
+        {
+            _seekTarget = target;
+            if (!_gapFilling || target < _gapStart) return;
+            _gapFilling = false;
+        }
+        _mpv?.SetPropertyAsync("file-local-options/vf", "");
+    }
+
+    /// <summary>
+    /// UI thread (position timer): drops the fill filter once playing past the first real frame and the landing slack.
+    /// A filter change can make mpv seek to the shown frame (paused, slow frame rates); that must not look like a seek
+    /// into the gap.
+    /// </summary>
+    private void EndGapFillWhenPast()
+    {
+        if (IsPaused) return;
+        lock (_gapLock)
+            if (!_gapFilling || !_gapRestarted) return;
+        // Read now: the stored position may still be the previous load's.
+        if ((_mpv?.GetPropertyDouble("time-pos") ?? 0) < _gapStart + GapLandSlack + 0.05) return;
+        lock (_gapLock)
+        {
+            if (!_gapFilling) return;
+            _gapFilling = false;
+        }
+        _mpv?.SetPropertyAsync("file-local-options/vf", "");
+    }
+
+    /// <summary>The loaded file is <paramref name="file"/>, or it is being reopened (late video start).</summary>
+    private bool IsLoadedOrReopening(string file)
+    {
+        if (_loadedPath != null) return SamePath(_loadedPath, file);
+        lock (_gapLock) return (_gapReopening || _gapFilling) && _gapPath != null && SamePath(_gapPath, file);
+    }
+
     private void FlushPosition(bool force = false)
     {
         if (_mpv == null) return;
+        EndGapFillWhenPast();
         if (Interlocked.Exchange(ref _timePosDirty, 0) == 1 || force)
         {
             var p = Volatile.Read(ref _latestTimePos);
@@ -838,7 +979,7 @@ public sealed class PlayerEngine : ObservableObject
             return;
         }
         // Skip if the user opened or queued something else meanwhile.
-        if (_mpv == null || seq != _openSeq || appendSeq != _appendSeq || _loadedPath == null || !SamePath(_loadedPath, file)) return;
+        if (_mpv == null || seq != _openSeq || appendSeq != _appendSeq || !IsLoadedOrReopening(file)) return;
         if (idx < 0 || siblings.Count <= 1 || siblings.Count > MaxFolderSiblings) return;
         if (IsShuffled)
         {
@@ -888,6 +1029,7 @@ public sealed class PlayerEngine : ObservableObject
         if (EofReached && IsPaused)
         {
             // keep-open paused us on the last frame: restart from the beginning.
+            NoteSeek(0);
             _mpv.CommandAsync("seek", "0", "absolute+exact");
             _mpv.SetPropertyAsync("pause", false);
             return;
@@ -911,26 +1053,35 @@ public sealed class PlayerEngine : ObservableObject
         if (Duration > 0) seconds = Math.Clamp(seconds, 0, Duration);
         Position = seconds;
         Volatile.Write(ref _latestTimePos, seconds);
+        NoteSeek(seconds);
         _mpv.CommandAsync("seek", seconds.ToString("0.###", Inv), exact ? "absolute+exact" : "absolute+keyframes");
     }
 
     public void SeekRelative(double seconds, bool exact = true)
     {
         if (_mpv == null || !HasMedia) return;
-        _mpv.CommandAsync("seek", seconds.ToString("0.###", Inv), exact ? "relative+exact" : "relative+keyframes");
         var target = Math.Max(0, _position + seconds);
         if (Duration > 0) target = Math.Min(target, Duration);
+        NoteSeek(target);
+        _mpv.CommandAsync("seek", seconds.ToString("0.###", Inv), exact ? "relative+exact" : "relative+keyframes");
         ShowOsd($"{(seconds >= 0 ? "▶▶" : "◀◀")} {Math.Abs(seconds):0.#}초   {Formatters.Time(target)} / {Formatters.Time(Duration)}", 900);
     }
 
     public void SeekPercent(double percent)
     {
         if (_mpv == null || !HasMedia) return;
+        NoteSeek(Duration * percent / 100);
         _mpv.CommandAsync("seek", percent.ToString("0.###", Inv), "absolute-percent+exact");
     }
 
     public void FrameStep() { if (HasMedia) _mpv?.CommandAsync("frame-step"); }
-    public void FrameBackStep() { if (HasMedia) _mpv?.CommandAsync("frame-back-step"); }
+
+    public void FrameBackStep()
+    {
+        if (!HasMedia) return;
+        NoteSeek(double.MaxValue); // a step, not a seek to the beginning: never reopens
+        _mpv?.CommandAsync("frame-back-step");
+    }
 
     public void Next()
     {
