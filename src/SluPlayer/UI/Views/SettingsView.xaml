@@ -150,6 +150,13 @@
                                     AutomationProperties.Name="{Binding YouTubeAction, StringFormat='YouTube {0}'}" />
                         </StackPanel>
                     </HeaderedContentControl>
+                    <HeaderedContentControl Style="{StaticResource Row}" Header="X 계정">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Status}" Text="{Binding XStatus}" AutomationProperties.Name="X 계정 상태" />
+                            <Button Style="{StaticResource Btn.Secondary}" Content="{Binding XAction}" Command="{Binding XAccountCommand}"
+                                    AutomationProperties.Name="{Binding XAction, StringFormat='X {0}'}" />
+                        </StackPanel>
+                    </HeaderedContentControl>
                 </StackPanel>
             </Border>
 

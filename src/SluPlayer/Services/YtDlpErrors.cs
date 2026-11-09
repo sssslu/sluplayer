@@ -1,3 +1,5 @@
+using SluPlayer.Services.Downloads;
+
 namespace SluPlayer.Services;
 
 /// <summary>Turns yt-dlp stderr into a short Korean message for the user (shared by streaming and downloads).</summary>
@@ -33,7 +35,27 @@ public static class YtDlpErrors
         ("JavaScript runtime", "deno 없음. 재설치 필요"),
     ];
 
-    /// <summary>True when the failure would be fixed by signing in to YouTube (bot check, age gate, private...).</summary>
+    /// <summary>
+    /// X failures. X answers guests the same way for posts without a video and for sensitive posts, so the message
+    /// depends on whether the in-app X sign-in is saved. Null for anything else.
+    /// </summary>
+    public static string? XMessage(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return null;
+        bool signedIn = LoginSite.X.IsLoggedIn;
+        if (text.Contains("No video could be found in this tweet", StringComparison.OrdinalIgnoreCase))
+            return signedIn ? "영상 없는 게시물" : "영상 없는 게시물 또는 X 로그인 필요";
+        if (text.Contains("NSFW tweet requires authentication", StringComparison.OrdinalIgnoreCase))
+            return signedIn ? "X 로그인 만료. 다시 로그인 필요" : "민감한 게시물. X 로그인 필요";
+        if (text.Contains("protected tweet", StringComparison.OrdinalIgnoreCase))
+            return signedIn ? "비공개 계정 게시물" : "비공개 계정 게시물. X 로그인 필요";
+        return null;
+    }
+
+    /// <summary>
+    /// True when the failure would be fixed by signing in (YouTube bot check, age gate…, or any message asking for a
+    /// sign-in, which names the site: the link decides which sign-in opens, see <see cref="LoginSite.For"/>).
+    /// </summary>
     public static bool NeedsLogin(string? text)
         => text != null && (text.Contains("not a bot", StringComparison.OrdinalIgnoreCase)
                             || text.Contains("confirm your age", StringComparison.OrdinalIgnoreCase)
@@ -44,6 +66,7 @@ public static class YtDlpErrors
     public static string? Translate(string? stderr)
     {
         if (string.IsNullOrWhiteSpace(stderr)) return null;
+        if (XMessage(stderr) is { } x) return x;
         foreach (var (needle, msg) in Known)
             if (stderr.Contains(needle, StringComparison.OrdinalIgnoreCase)) return msg;
         var line = LastErrorLine(stderr);

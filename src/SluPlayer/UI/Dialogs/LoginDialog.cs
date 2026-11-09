@@ -14,23 +14,17 @@ using SluPlayer.Services.Downloads;
 namespace SluPlayer.UI.Dialogs;
 
 /// <summary>
-/// In-app YouTube sign-in. YouTube may refuse anonymous requests from some networks ("Sign in to confirm you're not
-/// a bot") and Chrome/Edge cookie import is broken on Windows (App-Bound Encryption), so the user signs in here
-/// (WebView2, own profile in AppPaths.WebView2DataDir) and the session cookies are exported to a Netscape
-/// cookies.txt (AppPaths.YouTubeCookiesFile) that yt-dlp — downloads and mpv streaming — uses.
+/// In-app sign-in for a <see cref="LoginSite"/> (YouTube, X). YouTube may refuse anonymous requests from some networks
+/// ("Sign in to confirm you're not a bot"), X shows sensitive and protected posts only to accounts, and Chrome/Edge
+/// cookie import is broken on Windows (App-Bound Encryption), so the user signs in here (WebView2, one profile per
+/// site) and the session cookies are exported to a Netscape cookies.txt that yt-dlp — downloads and mpv streaming — uses.
 /// </summary>
-public sealed class YouTubeLoginDialog : DialogWindow
+public sealed class LoginDialog : DialogWindow
 {
-    // YouTube's own sign-in link: Google login, then youtube.com/signin sets LOGIN_INFO (yt-dlp requires it to treat
-    // the cookies as an authenticated session), then back to the home page.
-    private const string SignInUrl =
-        "https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true" +
-        "&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Dko%26next%3Dhttps%253A%252F%252Fwww.youtube.com%252F" +
-        "&hl=ko";
-
     private const string RuntimeDownloadUrl = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
     private readonly IShell _shell;
+    private readonly LoginSite _site;
     private readonly WebView2 _web;
     private readonly Grid _content;
     private readonly TextBlock _status;
@@ -38,15 +32,17 @@ public sealed class YouTubeLoginDialog : DialogWindow
     private readonly Button _doneButton;
     private readonly TaskCompletionSource<bool> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly DispatcherTimer _poll;
+    private CoreWebView2Environment? _env;
     private bool _exporting;
     private bool _exported;
     private bool _closed;
 
-    private YouTubeLoginDialog(IShell shell)
+    private LoginDialog(IShell shell, LoginSite site)
     {
         _shell = shell;
-        Title = "YouTube 로그인";
-        DialogIcon = (string)FindResource("Icon.Youtube");
+        _site = site;
+        Title = site.Name + " 로그인";
+        DialogIcon = (string)FindResource(site == LoginSite.YouTube ? "Icon.Youtube" : "Icon.Account");
         SizeToContent = SizeToContent.Manual;
         ResizeMode = ResizeMode.CanResize;
         Width = 1000;
@@ -54,7 +50,7 @@ public sealed class YouTubeLoginDialog : DialogWindow
         MinWidth = 620;
         MinHeight = 460;
         Padding = new Thickness(0);
-        AutomationProperties.SetAutomationId(this, "YouTubeLoginDialog");
+        AutomationProperties.SetAutomationId(this, site.Name + "LoginDialog");
 
         Brush B(string key) => (Brush)FindResource(key);
 
@@ -93,8 +89,9 @@ public sealed class YouTubeLoginDialog : DialogWindow
         };
 
         // ---- browser ----
-        _web = new WebView2 { Visibility = Visibility.Hidden, DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 14, 16, 20) };
+        _web = NewBrowser();
         AutomationProperties.SetAutomationId(_web, "LoginBrowser");
+        _web.Visibility = Visibility.Hidden;
         _loading = new TextBlock
         {
             Text = "불러오는 중…",
@@ -120,27 +117,26 @@ public sealed class YouTubeLoginDialog : DialogWindow
         Closed += OnClosed;
     }
 
-    private const string SignInPrompt = "Google 계정으로 로그인";
-
     /// <summary>
-    /// Opens the sign-in window (one at a time; modeless). <paramref name="owner"/> is the window it belongs to (the
-    /// download window, or the player when null). The task completes with true after the cookies were exported,
-    /// false when the window was closed without signing in.
+    /// Opens the sign-in window of <paramref name="site"/> (one per site; modeless). <paramref name="owner"/> is the
+    /// window it belongs to (the download window, or the player when null). The task completes with true after the
+    /// cookies were exported, false when the window was closed without signing in.
     /// </summary>
-    public static Task<bool> ShowAsync(IShell shell, Window? owner = null)
+    public static Task<bool> ShowAsync(IShell shell, LoginSite site, Window? owner = null)
     {
-        var existing = Open;
+        var existing = Open(site);
         if (existing != null)
         {
             if (!NoActivate) existing.Activate();
             return existing._result.Task;
         }
-        var dlg = new YouTubeLoginDialog(shell) { Owner = owner ?? shell.Window, ShowActivated = !NoActivate };
+        var dlg = new LoginDialog(shell, site) { Owner = owner ?? shell.Window, ShowActivated = !NoActivate };
         dlg.Show();
         return dlg._result.Task;
     }
 
-    private static YouTubeLoginDialog? Open => Application.Current?.Windows.OfType<YouTubeLoginDialog>().FirstOrDefault();
+    private static LoginDialog? Open(LoginSite site)
+        => Application.Current?.Windows.OfType<LoginDialog>().FirstOrDefault(d => d._site == site);
 
     /// <summary>Started by scripts/tests with --noactivate: never take the focus.</summary>
     private static bool NoActivate
@@ -148,22 +144,34 @@ public sealed class YouTubeLoginDialog : DialogWindow
 
     private static CoreWebView2EnvironmentOptions EnvironmentOptions() => new() { Language = "ko-KR" };
 
+    private static WebView2 NewBrowser() => new() { DefaultBackgroundColor = System.Drawing.Color.FromArgb(255, 14, 16, 20) };
+
+    private static void Configure(CoreWebView2 core)
+    {
+        core.Settings.AreDevToolsEnabled = false;
+        core.Settings.IsStatusBarEnabled = false;
+        core.Settings.IsPasswordAutosaveEnabled = false;
+        core.Settings.IsGeneralAutofillEnabled = false;
+    }
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         try
         {
-            Directory.CreateDirectory(AppPaths.WebView2DataDir);
-            var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebView2DataDir, EnvironmentOptions());
+            Directory.CreateDirectory(_site.WebView2DataDir);
+            _env = await CoreWebView2Environment.CreateAsync(null, _site.WebView2DataDir, EnvironmentOptions());
             if (_closed) return;
-            await _web.EnsureCoreWebView2Async(env);
+            await _web.EnsureCoreWebView2Async(_env);
             if (_closed) return;
             var core = _web.CoreWebView2;
-            core.Settings.AreDevToolsEnabled = false;
-            core.Settings.IsStatusBarEnabled = false;
-            core.Settings.IsPasswordAutosaveEnabled = false;
-            core.Settings.IsGeneralAutofillEnabled = false;
+            Configure(core);
             core.NewWindowRequested += (_, a) =>
             {
+                if (_site.RealPopups)
+                {
+                    OpenPopup(a);
+                    return;
+                }
                 // Keep Google's pop-ups (help, account chooser) inside this window.
                 a.Handled = true;
                 core.Navigate(a.Uri);
@@ -175,7 +183,7 @@ public sealed class YouTubeLoginDialog : DialogWindow
                 if (!a.IsSuccess && a.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)
                     _status.Text = "페이지 로드 실패: 네트워크 오류";
                 else if (!_exporting && !_exported)
-                    _status.Text = SignInPrompt;
+                    _status.Text = _site.SignInPrompt;
                 await CheckSessionAsync();
             };
             core.SourceChanged += async (_, _) => await CheckSessionAsync();
@@ -184,7 +192,7 @@ public sealed class YouTubeLoginDialog : DialogWindow
                 Log.Warn($"WebView2 process failed: {a.ProcessFailedKind}");
                 _status.Text = "로그인 창 오류. 창을 닫고 다시 열기";
             };
-            core.Navigate(SignInUrl);
+            core.Navigate(_site.SignInUrl);
             _poll.Start();
         }
         catch (WebView2RuntimeNotFoundException ex)
@@ -196,6 +204,63 @@ public sealed class YouTubeLoginDialog : DialogWindow
         {
             Log.Error("could not start the sign-in browser", ex);
             ShowProblem("로그인 창 열기 실패: " + ex.Message, null, null);
+        }
+    }
+
+    /// <summary>
+    /// A window the page opens ("Google로 로그인" on X) gets its own small window with the same profile: the provider
+    /// reports the sign-in back to its opener, which a page opened in place would no longer have.
+    /// </summary>
+    private async void OpenPopup(CoreWebView2NewWindowRequestedEventArgs a)
+    {
+        var deferral = a.GetDeferral();
+        a.Handled = true;
+        var features = a.WindowFeatures;
+        bool sized = features is { HasSize: true, Width: > 0, Height: > 0 };
+        var web = NewBrowser();
+        var popup = new DialogWindow
+        {
+            Title = Title,
+            DialogIcon = DialogIcon,
+            Owner = this,
+            Content = web,
+            SizeToContent = SizeToContent.Manual,
+            ResizeMode = ResizeMode.CanResize,
+            Padding = new Thickness(0),
+            // The size the page asked for, plus the title bar.
+            Width = sized ? Math.Clamp((double)features!.Width, 400, 1000) : 520,
+            Height = sized ? Math.Clamp((double)features!.Height + 44, 400, 900) : 700,
+            MinWidth = 360,
+            MinHeight = 360,
+            ShowActivated = !NoActivate,
+        };
+        popup.Closed += (_, _) =>
+        {
+            try { web.Dispose(); } catch { }
+        };
+        try
+        {
+            popup.Show();
+            await web.EnsureCoreWebView2Async(_env);
+            var core = web.CoreWebView2;
+            Configure(core);
+            core.WindowCloseRequested += (_, _) => popup.Close();
+            core.NewWindowRequested += (_, b) =>
+            {
+                b.Handled = true;
+                core.Navigate(b.Uri);
+            };
+            a.NewWindow = core;
+        }
+        catch (Exception ex)
+        {
+            // Closed before it was ready, or the browser failed: the page gets no window.
+            Log.Warn("sign-in pop-up failed: " + ex.Message);
+            try { popup.Close(); } catch { }
+        }
+        finally
+        {
+            deferral.Complete();
         }
     }
 
@@ -246,12 +311,12 @@ public sealed class YouTubeLoginDialog : DialogWindow
         if (_exported || _exporting || _closed) return;
         var core = _web.CoreWebView2;
         if (core == null) return;
-        // Only after Google redirected back to YouTube (the youtube.com session cookies are set on the way).
-        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var u) || !UrlTools.IsYouTubeHost(u.Host)) return;
+        // Only once the sign-in is back on the site itself (YouTube's session cookies are set on the way back from Google).
+        if (!Uri.TryCreate(core.Source, UriKind.Absolute, out var u) || !_site.IsSiteHost(u.Host)) return;
         try
         {
-            var cookies = await WebViewCookieExport.CollectAsync(core.CookieManager, WebViewCookieExport.YouTubeUris);
-            if (WebViewCookieExport.HasYouTubeSession(cookies)) await ExportAsync(automatic: true);
+            var cookies = await WebViewCookieExport.CollectAsync(core.CookieManager, _site.CookieUris);
+            if (_site.HasSession(cookies)) await ExportAsync(automatic: true);
         }
         catch (Exception ex)
         {
@@ -268,30 +333,29 @@ public sealed class YouTubeLoginDialog : DialogWindow
         try
         {
             _status.Text = "로그인 정보 저장 중…";
-            // Leave YouTube's pages first: their scripts rotate the session cookies, which would invalidate the copy
-            // we hand to yt-dlp (see the yt-dlp wiki on exporting YouTube cookies).
-            await NavigateAndWaitAsync(core, "https://www.youtube.com/robots.txt", TimeSpan.FromSeconds(6));
-            var cookies = await WebViewCookieExport.CollectAsync(core.CookieManager, WebViewCookieExport.YouTubeUris);
-            if (!WebViewCookieExport.HasYouTubeSession(cookies))
+            // Leave the site's pages first: their scripts may change the session cookies after we copied them.
+            await NavigateAndWaitAsync(core, _site.ParkUrl, TimeSpan.FromSeconds(6));
+            var cookies = await WebViewCookieExport.CollectAsync(core.CookieManager, _site.CookieUris);
+            if (!_site.HasSession(cookies))
             {
-                _status.Text = automatic ? SignInPrompt : "아직 로그인 안 됨";
-                if (!automatic) core.Navigate(SignInUrl);
+                _status.Text = automatic ? _site.SignInPrompt : "아직 로그인 안 됨";
+                if (!automatic) core.Navigate(_site.SignInUrl);
                 return;
             }
-            // Only youtube.com cookies go into the plaintext file (yt-dlp sends nothing else to YouTube).
-            var youtube = cookies.Where(WebViewCookieExport.IsYouTubeCookie).ToList();
-            await Task.Run(() => NetscapeCookies.WriteFile(AppPaths.YouTubeCookiesFile, youtube));
+            // Only the site's own cookies go into the plaintext file (yt-dlp sends nothing else to it).
+            var own = cookies.Where(_site.IsSiteCookie).ToList();
+            await Task.Run(() => NetscapeCookies.WriteFile(_site.CookiesFile, own));
             _exported = true;
-            Log.Info($"YouTube sign-in: exported {youtube.Count} cookies to {AppPaths.YouTubeCookiesFile}");
+            Log.Info($"{_site.Name} sign-in: exported {own.Count} cookies to {_site.CookiesFile}");
 
             _shell.Player.RefreshYtdlCookies();
-            LoginChanged?.Invoke(true);
+            LoginChanged?.Invoke(_site, true);
             _result.TrySetResult(true);
             Close();
         }
         catch (Exception ex)
         {
-            Log.Error("YouTube cookie export failed", ex);
+            Log.Error($"{_site.Name} cookie export failed", ex);
             _status.Text = "로그인 정보 저장 실패: " + ex.Message;
         }
         finally
@@ -332,45 +396,46 @@ public sealed class YouTubeLoginDialog : DialogWindow
     /// Raised on the UI thread after a sign-in was saved (true) or after sign-out (false), wherever it started, so every
     /// window shows the same state.
     /// </summary>
-    public static event Action<bool>? LoginChanged;
+    public static event Action<LoginSite, bool>? LoginChanged;
 
     /// <summary>
-    /// "로그아웃": deletes the exported cookies and clears the WebView2 profile (cookies + site data), then makes mpv's
-    /// streaming forget the cookies.
+    /// "로그아웃": deletes the site's exported cookies and clears its WebView2 profile (cookies + site data), then makes
+    /// mpv's streaming forget the cookies.
     /// </summary>
-    public static async Task SignOutAsync(IShell shell)
+    public static async Task SignOutAsync(IShell shell, LoginSite site)
     {
         try
         {
-            if (File.Exists(AppPaths.YouTubeCookiesFile)) File.Delete(AppPaths.YouTubeCookiesFile);
+            if (File.Exists(site.CookiesFile)) File.Delete(site.CookiesFile);
         }
         catch (Exception ex)
         {
-            Log.Warn("could not delete the YouTube cookies file: " + ex.Message);
+            Log.Warn($"could not delete the {site.Name} cookies file: " + ex.Message);
         }
 
-        if (Open?._web.CoreWebView2 is { } core)
+        var open = Open(site);
+        if (open?._web.CoreWebView2 is { } core)
         {
             core.CookieManager.DeleteAllCookies();
-            Open?.Close();
+            open.Close();
         }
-        else if (Directory.Exists(AppPaths.WebView2DataDir))
+        else if (Directory.Exists(site.WebView2DataDir))
         {
-            await ClearProfileHeadlessAsync();
+            await ClearProfileHeadlessAsync(site.WebView2DataDir);
         }
         shell.Player.RefreshYtdlCookies();
-        Log.Info("YouTube sign-out done");
-        LoginChanged?.Invoke(false);
+        Log.Info($"{site.Name} sign-out done");
+        LoginChanged?.Invoke(site, false);
     }
 
-    /// <summary>Clears the sign-in profile through an invisible WebView2 controller (no window is shown).</summary>
-    private static async Task ClearProfileHeadlessAsync()
+    /// <summary>Clears a sign-in profile through an invisible WebView2 controller (no window is shown).</summary>
+    private static async Task ClearProfileHeadlessAsync(string dataDir)
     {
         HwndSource? host = null;
         CoreWebView2Controller? controller = null;
         try
         {
-            var env = await CoreWebView2Environment.CreateAsync(null, AppPaths.WebView2DataDir, EnvironmentOptions());
+            var env = await CoreWebView2Environment.CreateAsync(null, dataDir, EnvironmentOptions());
             host = new HwndSource(new HwndSourceParameters("SluPlayerWebViewSignOut")
             {
                 Width = 1,

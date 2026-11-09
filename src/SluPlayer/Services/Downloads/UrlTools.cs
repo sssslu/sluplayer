@@ -53,10 +53,19 @@ public static partial class UrlTools
         var path = u.AbsolutePath.ToLowerInvariant();
         if (host is "instagram.com" || host.EndsWith(".instagram.com", StringComparison.Ordinal))
             return path.StartsWith("/direct/", StringComparison.Ordinal);
-        if (host is "x.com" or "twitter.com" || host.EndsWith(".x.com", StringComparison.Ordinal)
-            || host.EndsWith(".twitter.com", StringComparison.Ordinal))
+        if (IsXHost(host))
             return path.StartsWith("/messages", StringComparison.Ordinal) || path.StartsWith("/i/chat", StringComparison.Ordinal);
         return false;
+    }
+
+    /// <summary>An x.com or twitter.com link.</summary>
+    public static bool IsX(string? url) => Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var u) && IsXHost(u.Host);
+
+    private static bool IsXHost(string host)
+    {
+        host = host.ToLowerInvariant();
+        return host is "x.com" or "twitter.com" || host.EndsWith(".x.com", StringComparison.Ordinal)
+               || host.EndsWith(".twitter.com", StringComparison.Ordinal);
     }
 
     /// <summary>11-character video id from watch/shorts/live/embed/youtu.be links, or null.</summary>

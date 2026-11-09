@@ -7,13 +7,13 @@ SluPlayer is a light Windows video player (5KPlayer-like) with a downloader for 
 | UI | .NET 10 WPF (C#), dark theme, Korean UI |
 | Playback | libmpv (`libmpv-2.dll`, mpv 0.41): FFmpeg decoding, `gpu-next` renderer on Direct3D 11, hardware decoding (`hwdec=auto-safe` → d3d11va / nvdec) |
 | Downloads | `yt-dlp.exe` (+ `deno.exe` JS runtime for YouTube, `ffmpeg.exe` for merging/conversion) run as subprocesses |
-| YouTube sign-in | WebView2, only while the sign-in window is open |
+| YouTube / X sign-in | WebView2, only while a sign-in window is open |
 
 ## Windows
 
-- **Main window = the player.** Without media the video area shows an idle panel: icon, one line, [열기] [다운로드] (plus [YouTube 로그인] when an online video failed because YouTube wants a sign-in). Controls float over the video in two overlay windows (title bar, control bar). Everything else is in the right-click menu (`PlayerMenu`).
+- **Main window = the player.** Without media the video area shows an idle panel: icon, one line, [열기] [다운로드] (plus [YouTube 로그인] or [X 로그인] when an online video failed for lack of that sign-in). Controls float over the video in two overlay windows (title bar, control bar). Everything else is in the right-click menu (`PlayerMenu`).
 - **Download and settings windows** are `PageWindow`s: non-modal, one instance each, created on first open; closing only hides them. They host `OnlineView` and `SettingsView` (`UserControl`s built with `IShell`). `IPage.OnNavigatedTo()` runs each time the window is shown; views that are `IDisposable` are disposed at app exit.
-- **Dialogs** (`DialogWindow` base): `OpenUrlDialog`, `YouTubeLoginDialog`.
+- **Dialogs** (`DialogWindow` base): `OpenUrlDialog`, `LoginDialog`.
 
 ## Source layout (`src/SluPlayer`)
 
@@ -29,8 +29,8 @@ Core/
 Services/                Log, Settings/ (AppSettings + SettingsService), HistoryService (resume positions), SingleInstance,
                          AppLifetime (exit prompt + shutdown handlers), ToolLocator, FileAssociations, YtDlpCookies, YtDlpErrors
   Downloads/             DownloadManager (queue, persistence in downloads.json), DownloadItem, DownloadOptions (+ yt-dlp
-                         arguments), YtDlpService (+ Protocol, Models), YtDlpUpdater, WebViewCookieExport + NetscapeCookies
-                         (sign-in cookies), UrlTools, ChildProcessJob (kill-on-close job object for yt-dlp/ffmpeg/deno)
+                         arguments), YtDlpService (+ Protocol, Models), YtDlpUpdater, LoginSite + WebViewCookieExport +
+                         NetscapeCookies (sign-in cookies), UrlTools, ChildProcessJob (kill-on-close job object for yt-dlp/ffmpeg/deno)
 ViewModels/              OnlineViewModel (+ Online/*), SettingsViewModel
 UI/
   MainWindow*.cs         the player window: video, idle panel, overlays (.Overlay), input and remote commands (.Input),
@@ -41,7 +41,7 @@ UI/
   Overlay/               transparent non-activating windows over the video (ControlBarWindow, TopBarWindow)
   Menus/PlayerMenu.cs    right-click and control-bar menus
   Views/                 OnlineView, SettingsView, PlaylistPanel, AudioView (Online/, Player/, Settings/ hold helpers)
-  Dialogs/               DialogWindow + DialogStyles.xaml, OpenUrlDialog, YouTubeLoginDialog (WebView2)
+  Dialogs/               DialogWindow + DialogStyles.xaml, OpenUrlDialog, LoginDialog (WebView2)
   Toasts.cs              short notifications inside SluPlayer windows
 Themes/                  Colors.xaml, Icons.xaml, Controls.xaml (merged in that order by App.xaml)
 ```
@@ -86,9 +86,11 @@ Themes/                  Colors.xaml, Icons.xaml, Controls.xaml (merged in that 
 - `AppSettings` holds only what the settings window and the download window offer, plus state the app remembers itself (window bounds, volume, mute, loop, shuffle, playlist panel, last yt-dlp check). Fixed behaviour is written as constants where it is used, mostly in `MpvOptionBuilder`. Add a setting only together with its UI.
 - Unknown properties in `settings.json` (settings removed in later versions) are ignored on load and dropped on the next save.
 
-### YouTube sign-in and cookies
-- `YouTubeLoginDialog` (WebView2 with its own profile in `%LOCALAPPDATA%\SluPlayer\webview2`) exports the youtube.com cookies to `%LOCALAPPDATA%\SluPlayer\cookies\youtube-cookies.txt`. That file is the only cookie source (`YtDlpCookies`): every yt-dlp run gets a private copy (`CookieLease`, yt-dlp rewrites its cookie file at exit) and mpv gets its own copy through `ytdl-raw-options`. Sign-out deletes the file and clears the WebView2 profile.
-- `YouTubeLoginDialog.LoginChanged` keeps the download window, the settings window and failed downloads (`RetryLoginFailures`) in step, wherever the sign-in started.
+### Sign-ins (YouTube, X) and cookies
+- `LoginSite` describes each sign-in: sign-in page, the cookies that make a session, its cookie file and its WebView2 profile. `LoginDialog` (one window per site) exports the site's own cookies: youtube.com to `%LOCALAPPDATA%\SluPlayer\cookies\youtube-cookies.txt` (profile `webview2`), x.com to `cookies\x-cookies.txt` (profile `webview2-x`). On X, pages that open a window (Google/Apple sign-in) get a real pop-up with the same profile, since those providers report back to their opener.
+- Those files are the only cookie source (`YtDlpCookies`): every yt-dlp run gets a private merged copy (`CookieLease`; yt-dlp rewrites its cookie file at exit and only sends each cookie to its own site) and mpv gets its own copy through `ytdl-raw-options`. Sign-out deletes one site's file and clears its WebView2 profile.
+- `LoginSite.For(url)` picks the sign-in a failed link needs (X for x.com/twitter.com, YouTube otherwise); the login buttons of the idle panel, the analysis message and failed downloads open that one. X's guest answers (sensitive, protected, no video) are worded by whether the X sign-in exists (`YtDlpErrors.XMessage`).
+- `LoginDialog.LoginChanged` keeps the download window, the settings window and failed downloads (`RetryLoginFailures`, per site) in step, wherever the sign-in started.
 
 ### Downloads
 - `DownloadManager` (singleton, UI thread) runs up to two yt-dlp processes, parses their `--progress-template` output, and saves the list to `downloads.json`.

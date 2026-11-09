@@ -9,8 +9,10 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using SluPlayer.Core.Player;
 using SluPlayer.Services;
+using SluPlayer.Services.Downloads;
 using SluPlayer.Services.Settings;
 using SluPlayer.UI;
+using SluPlayer.UI.Dialogs;
 
 namespace SluPlayer.ViewModels;
 
@@ -50,8 +52,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         HwdecChoices = hwdec;
 
         EnsureDownloadQualityChoice();
-        _loggedIn = ReadYouTubeLogin();
-        UI.Dialogs.YouTubeLoginDialog.LoginChanged += OnLoginChanged;
+        ReadLogins();
+        LoginDialog.LoginChanged += OnLoginChanged;
         _ = RefreshAssociationAsync();
     }
 
@@ -83,7 +85,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     {
         if (_disposed) return;
         EnsureDownloadQualityChoice();
-        _loggedIn = ReadYouTubeLogin();
+        ReadLogins();
         OnPropertyChanged(string.Empty);
         _ = RefreshAssociationAsync();
     }
@@ -239,40 +241,62 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         DownloadQualityChoices.Insert(at, new Choice(q, $"{tier}p"));
     }
 
-    // ---- YouTube sign-in ----------------------------------------------------
+    // ---- sign-ins (YouTube, X) ----------------------------------------------
 
-    private bool _loggedIn;
+    private bool _youTubeLoggedIn;
+    private bool _xLoggedIn;
 
-    private static bool ReadYouTubeLogin()
+    private void ReadLogins()
     {
-        try { return YtDlpCookies.HasYouTubeLogin; } catch { return false; }
+        _youTubeLoggedIn = ReadLogin(LoginSite.YouTube);
+        _xLoggedIn = ReadLogin(LoginSite.X);
     }
 
-    public string YouTubeStatus => _loggedIn ? "로그인됨" : "로그인 안 됨";
+    private static bool ReadLogin(LoginSite site)
+    {
+        try { return site.IsLoggedIn; } catch { return false; }
+    }
 
-    public string YouTubeAction => _loggedIn ? "로그아웃" : "로그인";
+    private static string LoginStatus(bool loggedIn) => loggedIn ? "로그인됨" : "로그인 안 됨";
+
+    private static string LoginAction(bool loggedIn) => loggedIn ? "로그아웃" : "로그인";
+
+    public string YouTubeStatus => LoginStatus(_youTubeLoggedIn);
+
+    public string YouTubeAction => LoginAction(_youTubeLoggedIn);
+
+    public string XStatus => LoginStatus(_xLoggedIn);
+
+    public string XAction => LoginAction(_xLoggedIn);
 
     [RelayCommand]
-    private async Task YouTubeAccount()
+    private Task YouTubeAccount() => AccountAsync(LoginSite.YouTube, _youTubeLoggedIn);
+
+    [RelayCommand]
+    private Task XAccount() => AccountAsync(LoginSite.X, _xLoggedIn);
+
+    private async Task AccountAsync(LoginSite site, bool loggedIn)
     {
-        if (_loggedIn)
+        if (loggedIn)
         {
-            await UI.Dialogs.YouTubeLoginDialog.SignOutAsync(_shell);
-            _shell.ShowToast("YouTube 로그아웃됨", ToastKind.Success);
+            await LoginDialog.SignOutAsync(_shell, site);
+            _shell.ShowToast(site.Name + " 로그아웃됨", ToastKind.Success);
         }
         else
         {
-            await UI.Dialogs.YouTubeLoginDialog.ShowAsync(_shell);
+            await LoginDialog.ShowAsync(_shell, site);
         }
     }
 
     /// <summary>Sign-in or sign-out from any window.</summary>
-    private void OnLoginChanged(bool signedIn)
+    private void OnLoginChanged(LoginSite site, bool signedIn)
     {
         if (_disposed) return;
-        _loggedIn = ReadYouTubeLogin();
+        ReadLogins();
         OnPropertyChanged(nameof(YouTubeStatus));
         OnPropertyChanged(nameof(YouTubeAction));
+        OnPropertyChanged(nameof(XStatus));
+        OnPropertyChanged(nameof(XAction));
     }
 
     // =====================================================================
@@ -323,7 +347,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        UI.Dialogs.YouTubeLoginDialog.LoginChanged -= OnLoginChanged;
+        LoginDialog.LoginChanged -= OnLoginChanged;
         _cts.Cancel();
     }
 }

@@ -28,7 +28,7 @@ public sealed class OnlineViewModel : ObservableObject, IDisposable
         Manager.Changed += RefreshListState;
         Manager.Items.CollectionChanged += OnItemsChanged;
         YtDlpUpdater.EngineUpdated += OnEngineUpdated;
-        YouTubeLoginDialog.LoginChanged += OnLoginChanged;
+        LoginDialog.LoginChanged += OnLoginChanged;
 
         AnalyzeCommand = new AsyncRelayCommand(() => AnalyzeAsync(UrlText, null));
         PasteCommand = new AsyncRelayCommand(PasteAsync);
@@ -50,8 +50,11 @@ public sealed class OnlineViewModel : ObservableObject, IDisposable
         OpenDownloadFolderCommand = new RelayCommand(() => OpenFolder(_shell.Settings.DownloadDir, null));
 
         UpdateEngineCommand = new AsyncRelayCommand(UpdateEngineAsync);
-        LoginCommand = new AsyncRelayCommand(LoginAsync);
-        LogoutCommand = new AsyncRelayCommand(LogoutAsync);
+        // A failed analysis (no parameter) or download (the item): the sign-in its link needs.
+        LoginCommand = new AsyncRelayCommand<DownloadItem?>(i => LoginAsync(LoginSite.For(i?.Url ?? _errorUrl)), Concurrent);
+        // The footer: "YouTube" or "X".
+        SiteLoginCommand = new AsyncRelayCommand<string?>(name => LoginAsync(SiteNamed(name)), Concurrent);
+        SiteLogoutCommand = new AsyncRelayCommand<string?>(name => LoginDialog.SignOutAsync(_shell, SiteNamed(name)));
 
         RefreshListState();
         RefreshLoginState();
@@ -358,42 +361,46 @@ public sealed class OnlineViewModel : ObservableObject, IDisposable
     private void OnEngineUpdated(string exe) => _ = LoadEngineVersionAsync();
 
     // =====================================================================
-    // YouTube sign-in
+    // Sign-ins (YouTube, X)
     // =====================================================================
 
-    private bool _isLoggedIn;
-    public bool IsLoggedIn { get => _isLoggedIn; private set => SetProperty(ref _isLoggedIn, value); }
+    private bool _isYouTubeLoggedIn;
+    public bool IsYouTubeLoggedIn { get => _isYouTubeLoggedIn; private set => SetProperty(ref _isYouTubeLoggedIn, value); }
 
-    private string _loginText = "";
-    public string LoginText { get => _loginText; private set => SetProperty(ref _loginText, value); }
+    private bool _isXLoggedIn;
+    public bool IsXLoggedIn { get => _isXLoggedIn; private set => SetProperty(ref _isXLoggedIn, value); }
 
-    public IAsyncRelayCommand LoginCommand { get; }
-    public IAsyncRelayCommand LogoutCommand { get; }
+    public IAsyncRelayCommand<DownloadItem?> LoginCommand { get; }
+    public IAsyncRelayCommand<string?> SiteLoginCommand { get; }
+    public IAsyncRelayCommand<string?> SiteLogoutCommand { get; }
+
+    /// <summary>One sign-in window per site anyway: the other site's buttons stay usable while one is open.</summary>
+    private const AsyncRelayCommandOptions Concurrent = AsyncRelayCommandOptions.AllowConcurrentExecutions;
+
+    private static LoginSite SiteNamed(string? name) => LoginSite.All.FirstOrDefault(s => s.Name == name) ?? LoginSite.YouTube;
 
     private void RefreshLoginState()
     {
-        IsLoggedIn = YtDlpCookies.HasYouTubeLogin;
-        LoginText = IsLoggedIn ? "YouTube 로그인됨" : "YouTube 로그인 안 됨";
+        IsYouTubeLoggedIn = LoginSite.YouTube.IsLoggedIn;
+        IsXLoggedIn = LoginSite.X.IsLoggedIn;
     }
 
     /// <summary>Sign-in or sign-out from any window (this one, the player, settings).</summary>
-    private void OnLoginChanged(bool signedIn)
+    private void OnLoginChanged(LoginSite site, bool signedIn)
     {
         RefreshLoginState();
-        if (signedIn) Manager.RetryLoginFailures();
+        if (signedIn) Manager.RetryLoginFailures(site);
     }
 
-    private async Task LoginAsync()
+    private async Task LoginAsync(LoginSite site)
     {
         // The dialog saves the cookies, refreshes mpv's ytdl cookies and raises LoginChanged (state + retries).
-        bool ok = await YouTubeLoginDialog.ShowAsync(_shell, OnlineFormat.ActiveWindow(_shell));
-        if (!ok) return;
+        bool ok = await LoginDialog.ShowAsync(_shell, site, OnlineFormat.ActiveWindow(_shell));
+        if (!ok || !MessageNeedsLogin || LoginSite.For(_errorUrl) != site) return;
         // Re-run the analysis that failed because of the sign-in requirement.
-        if (MessageNeedsLogin && _errorUrl != null) await AnalyzeAsync(_errorUrl, _lastWholePlaylist);
-        else if (MessageNeedsLogin) ShowMessage(null);
+        if (_errorUrl != null) await AnalyzeAsync(_errorUrl, _lastWholePlaylist);
+        else ShowMessage(null);
     }
-
-    private Task LogoutAsync() => YouTubeLoginDialog.SignOutAsync(_shell);
 
     // =====================================================================
     // Window lifecycle
@@ -414,6 +421,6 @@ public sealed class OnlineViewModel : ObservableObject, IDisposable
         Manager.Changed -= RefreshListState;
         Manager.Items.CollectionChanged -= OnItemsChanged;
         YtDlpUpdater.EngineUpdated -= OnEngineUpdated;
-        YouTubeLoginDialog.LoginChanged -= OnLoginChanged;
+        LoginDialog.LoginChanged -= OnLoginChanged;
     }
 }

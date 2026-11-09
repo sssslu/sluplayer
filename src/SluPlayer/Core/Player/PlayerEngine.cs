@@ -1396,7 +1396,7 @@ public sealed class PlayerEngine : ObservableObject
         => _mpv?.CommandAsync("show-text", text, durationMs.ToString(Inv));
 
     /// <summary>
-    /// Re-applies the cookie source for online streaming at runtime (call after YouTube sign-in/sign-out or a
+    /// Re-applies the cookie source for online streaming at runtime (call after a YouTube or X sign-in/sign-out or a
     /// cookie setting change). change-list append needs no escaping for paths.
     /// </summary>
     public void RefreshYtdlCookies()

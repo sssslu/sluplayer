@@ -216,10 +216,10 @@ public sealed class DownloadManager
         Changed?.Invoke();
     }
 
-    /// <summary>Re-queues failed items that failed because YouTube wanted a sign-in (after signing in).</summary>
-    public int RetryLoginFailures()
+    /// <summary>Re-queues items that failed because <paramref name="site"/> wanted a sign-in (after signing in there).</summary>
+    public int RetryLoginFailures(LoginSite site)
     {
-        var list = Items.Where(i => i.State == DownloadState.Failed && i.NeedsLogin).ToList();
+        var list = Items.Where(i => i.State == DownloadState.Failed && i.NeedsLogin && LoginSite.For(i.Url) == site).ToList();
         foreach (var i in list)
         {
             i.ResetRuntime(keepProgress: false);

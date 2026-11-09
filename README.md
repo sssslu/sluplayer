@@ -82,12 +82,19 @@ PowerShell에서 `(Get-FileHash .\SluPlayer-Setup-<버전>.exe).Hash`를 실행�
 ### YouTube 로그인 필요
 YouTube가 봇 확인을 요구하면 다운로드와 URL 재생이 실패한다. 연령 제한·멤버십 영상도 로그인이 필요하다.
 
-1. 다운로드 창 아래 **[로그인]** 또는 설정 → **YouTube 계정**에서 Google 계정으로 로그인.
+1. 다운로드 창 아래 **YouTube [로그인]** 또는 설정 → **YouTube 계정**에서 Google 계정으로 로그인.
 2. 로그인 정보(쿠키)는 이 PC의 `%LOCALAPPDATA%\SluPlayer\cookies`에만 저장하고 YouTube 요청에만 쓴다.
 3. 로그인 창은 Microsoft Edge WebView2를 쓴다. 창이 열리지 않으면 [WebView2 런타임](https://developer.microsoft.com/microsoft-edge/webview2/) 설치.
 
+### X 로그인 필요
+민감한 게시물과 비공개 계정 게시물은 X 로그인이 있어야 받을 수 있다.
+
+1. 실패한 항목의 **[로그인]**, 다운로드 창 아래 **X [로그인]** 또는 설정 → **X 계정**에서 로그인.
+2. 쿠키는 YouTube 것과 따로 `%LOCALAPPDATA%\SluPlayer\cookies`에 저장하고 X 요청에만 쓴다.
+3. 비공개 계정 게시물은 그 계정을 팔로우하는 계정으로 로그인해야 받을 수 있다.
+
 ### Instagram·X 영상이 안 받아짐
-- 공개 게시물·릴스만 된다. 비공개 계정 영상은 받을 수 없다.
+- Instagram은 공개 게시물·릴스만 된다. 비공개 계정 영상은 받을 수 없다.
 - DM 채팅방 링크(`instagram.com/direct/…`)는 안 된다. DM에 공유된 게시물을 열고 **공유 → 링크 복사**로 얻은 주소를 쓴다. DM에 직접 올린 영상은 링크가 없어서 받을 수 없다.
 
 ### GPU 가속 확인

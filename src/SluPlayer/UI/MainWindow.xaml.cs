@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using SluPlayer.Core.Interop;
 using SluPlayer.Core.Player;
 using SluPlayer.Services;
+using SluPlayer.Services.Downloads;
 using SluPlayer.Services.Settings;
 using SluPlayer.UI.Views;
 
@@ -408,7 +409,7 @@ public partial class MainWindow : Window, IShell
         // An engine update activated from the download window: online playback uses the new yt-dlp right away.
         Services.Downloads.YtDlpUpdater.EngineUpdated += exe => Dispatcher.BeginInvoke(() =>
             _player.Mpv?.CommandAsync("change-list", "script-opts", "append", "ytdl_hook-ytdl_path=" + exe));
-        Dialogs.YouTubeLoginDialog.LoginChanged += OnLoginChanged;
+        Dialogs.LoginDialog.LoginChanged += OnLoginChanged;
     }
 
     private readonly List<string> _startupCommands = new();
@@ -455,8 +456,9 @@ public partial class MainWindow : Window, IShell
         bool idle = !_player.HasMedia && !loading;
         IdlePanel.Visibility = idle ? Visibility.Visible : Visibility.Collapsed;
         IdleText.Text = _surfaceError ?? "파일을 끌어다 놓거나 열기";
-        IdleLoginButton.Visibility = idle && _surfaceError != null && YtDlpErrors.NeedsLogin(_surfaceError)
-            ? Visibility.Visible : Visibility.Collapsed;
+        bool login = idle && _surfaceError != null && YtDlpErrors.NeedsLogin(_surfaceError);
+        IdleLoginButton.Visibility = login ? Visibility.Visible : Visibility.Collapsed;
+        if (login) IdleLoginButton.Content = LoginSite.For(_lastFailedUrl).Name + " 로그인";
     }
 
     /// <summary>Text the surface shows instead of video (loading or error), for --dump-state.</summary>
@@ -465,20 +467,18 @@ public partial class MainWindow : Window, IShell
 
     private void IdleOpen_Click(object sender, RoutedEventArgs e) => OpenFilesDialog();
     private void IdleDownload_Click(object sender, RoutedEventArgs e) => ShowDownloads();
-    private void IdleLogin_Click(object sender, RoutedEventArgs e) => ShowYouTubeLogin();
+    /// <summary>
+    /// Opens the in-app sign-in the failed link needs, YouTube or X (the online video is retried by OnLoginChanged).
+    /// The dialog exports the cookies and refreshes mpv's yt-dlp options itself.
+    /// </summary>
+    private void IdleLogin_Click(object sender, RoutedEventArgs e) => _ = Dialogs.LoginDialog.ShowAsync(this, LoginSite.For(_lastFailedUrl));
 
-    /// <summary>Opens the in-app YouTube sign-in (the online video that failed is retried by OnLoginChanged).</summary>
-    public void ShowYouTubeLogin()
-    {
-        // The dialog exports the cookies and refreshes mpv's yt-dlp options itself.
-        _ = Dialogs.YouTubeLoginDialog.ShowAsync(this);
-    }
-
-    /// <summary>Signed in, from any window: retry the online video that failed for lack of a sign-in.</summary>
-    private void OnLoginChanged(bool signedIn)
+    /// <summary>Signed in, from any window: retry the online video that failed for lack of that sign-in.</summary>
+    private void OnLoginChanged(LoginSite site, bool signedIn)
     {
         var retry = _lastFailedUrl;
-        if (signedIn && retry != null && !_closing && !_player.HasMedia && _surfaceError != null && YtDlpErrors.NeedsLogin(_surfaceError))
+        if (signedIn && retry != null && LoginSite.For(retry) == site && !_closing && !_player.HasMedia
+            && _surfaceError != null && YtDlpErrors.NeedsLogin(_surfaceError))
             Play([retry]);
     }
 

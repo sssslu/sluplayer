@@ -28,7 +28,7 @@ public static class NetscapeCookies
     {
         var sb = new StringBuilder();
         sb.Append(Header).Append('\n');
-        sb.Append("# Exported by SluPlayer (YouTube sign-in). Keep this file private: it signs in to your account.\n\n");
+        sb.Append("# Exported by SluPlayer (in-app sign-in). Keep this file private: it signs in to your account.\n\n");
         foreach (var c in cookies)
         {
             if (!IsValid(c)) continue;

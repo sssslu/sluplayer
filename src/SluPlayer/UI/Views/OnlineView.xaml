@@ -255,7 +255,7 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button x:Name="LoginAction" Style="{StaticResource SmallPrimary}" Content="로그인" Margin="0,0,4,0"
                                 Visibility="{Binding ShowLoginAction, Converter={StaticResource Vis}}"
-                                Command="{Binding DataContext.LoginCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                                Command="{Binding DataContext.LoginCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
                         <Button x:Name="PlayAction" Style="{StaticResource ItemAction}" Content="{StaticResource Icon.Play}" ToolTip="재생"
                                 AutomationProperties.Name="재생" Visibility="{Binding CanPlay, Converter={StaticResource Vis}}"
                                 Command="{Binding DataContext.PlayItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
@@ -384,23 +384,46 @@
                     <Button x:Name="UpdateEngineButton" Style="{StaticResource SmallLink}" Content="엔진 업데이트" Command="{Binding UpdateEngineCommand}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
+                    <!-- one group per sign-in: dot (green = signed in), site, 로그인 / 로그아웃 -->
                     <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="0,0,7,0">
                         <Ellipse.Style>
                             <Style TargetType="{x:Type Ellipse}">
                                 <Setter Property="Fill" Value="{StaticResource Brush.TextTertiary}" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsLoggedIn}" Value="True">
+                                    <DataTrigger Binding="{Binding IsYouTubeLoggedIn}" Value="True">
                                         <Setter Property="Fill" Value="{StaticResource Brush.Success}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Ellipse.Style>
                     </Ellipse>
-                    <TextBlock x:Name="LoginState" Text="{Binding LoginText}" Style="{StaticResource Caption}" Foreground="{StaticResource Brush.TextSecondary}" />
-                    <Button x:Name="LoginButton" Style="{StaticResource SmallLink}" Content="로그인" Command="{Binding LoginCommand}"
-                            Visibility="{Binding IsLoggedIn, Converter={StaticResource Vis}, ConverterParameter=invert}" />
-                    <Button x:Name="LogoutButton" Style="{StaticResource SmallLink}" Content="로그아웃" Command="{Binding LogoutCommand}"
-                            Visibility="{Binding IsLoggedIn, Converter={StaticResource Vis}}" />
+                    <TextBlock x:Name="LoginState" Text="YouTube" Style="{StaticResource Caption}" Foreground="{StaticResource Brush.TextSecondary}" />
+                    <Button x:Name="LoginButton" Style="{StaticResource SmallLink}" Content="로그인" Command="{Binding SiteLoginCommand}" CommandParameter="YouTube"
+                            AutomationProperties.Name="YouTube 로그인"
+                            Visibility="{Binding IsYouTubeLoggedIn, Converter={StaticResource Vis}, ConverterParameter=invert}" />
+                    <Button x:Name="LogoutButton" Style="{StaticResource SmallLink}" Content="로그아웃" Command="{Binding SiteLogoutCommand}" CommandParameter="YouTube"
+                            AutomationProperties.Name="YouTube 로그아웃"
+                            Visibility="{Binding IsYouTubeLoggedIn, Converter={StaticResource Vis}}" />
+
+                    <Ellipse Width="7" Height="7" VerticalAlignment="Center" Margin="14,0,7,0">
+                        <Ellipse.Style>
+                            <Style TargetType="{x:Type Ellipse}">
+                                <Setter Property="Fill" Value="{StaticResource Brush.TextTertiary}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsXLoggedIn}" Value="True">
+                                        <Setter Property="Fill" Value="{StaticResource Brush.Success}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Ellipse.Style>
+                    </Ellipse>
+                    <TextBlock x:Name="XLoginState" Text="X" Style="{StaticResource Caption}" Foreground="{StaticResource Brush.TextSecondary}" />
+                    <Button x:Name="XLoginButton" Style="{StaticResource SmallLink}" Content="로그인" Command="{Binding SiteLoginCommand}" CommandParameter="X"
+                            AutomationProperties.Name="X 로그인"
+                            Visibility="{Binding IsXLoggedIn, Converter={StaticResource Vis}, ConverterParameter=invert}" />
+                    <Button x:Name="XLogoutButton" Style="{StaticResource SmallLink}" Content="로그아웃" Command="{Binding SiteLogoutCommand}" CommandParameter="X"
+                            AutomationProperties.Name="X 로그아웃"
+                            Visibility="{Binding IsXLoggedIn, Converter={StaticResource Vis}}" />
                 </StackPanel>
             </DockPanel>
         </Border>

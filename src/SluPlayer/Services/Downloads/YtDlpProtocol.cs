@@ -132,16 +132,21 @@ public static class YtDlpParser
 public sealed record YtDlpError(YtErrorKind Kind, string Message, bool NeedsLogin, string? Detail)
 {
     /// <param name="stderr">yt-dlp's stderr (only the ERROR lines matter).</param>
-    /// <param name="url">The URL that failed (decides whether the in-app YouTube sign-in can help).</param>
+    /// <param name="url">The URL that failed (decides whether an in-app sign-in, YouTube or X, can help).</param>
     /// <param name="downloading">true for downloads, false for analysis (changes the fallback text).</param>
     public static YtDlpError From(string? stderr, string? url, bool downloading)
     {
         var errorText = ErrorText(stderr);
         var kind = YtDlpParser.Classify(errorText ?? stderr);
         bool youtube = UrlTools.IsYouTube(url);
+        bool x = UrlTools.IsX(url);
         // The message depends on whether yt-dlp got the in-app sign-in cookies.
-        bool loggedIn = YtDlpCookies.HasYouTubeLogin;
+        bool loggedIn = LoginSite.YouTube.IsLoggedIn;
         string? detail = YtDlpErrors.LastErrorLine(stderr) ?? errorText;
+
+        // X's own answers (sensitive, protected, no video) read differently with and without the X sign-in.
+        if (x && YtDlpErrors.XMessage(errorText ?? stderr) is { } xMessage)
+            return new YtDlpError(kind, xMessage, YtDlpErrors.NeedsLogin(xMessage), detail);
 
         string msg;
         bool needsLogin = false;
@@ -155,13 +160,17 @@ public sealed record YtDlpError(YtErrorKind Kind, string Message, bool NeedsLogi
                 needsLogin = youtube && !loggedIn;
                 msg = needsLogin ? "연령 제한 영상. YouTube 로그인 필요" : "연령 제한 영상";
                 break;
+            case YtErrorKind.LoginRequired when x:
+                needsLogin = true;
+                msg = LoginSite.X.IsLoggedIn ? "X 로그인 만료. 다시 로그인 필요" : "X 로그인 필요";
+                break;
             case YtErrorKind.LoginRequired:
                 needsLogin = youtube;
-                // The in-app sign-in is YouTube only.
+                // The in-app sign-ins are YouTube and X only.
                 msg = youtube ? "YouTube 로그인 필요" : "로그인 필요";
                 break;
             case YtErrorKind.Cookies:
-                needsLogin = youtube;
+                needsLogin = youtube || x;
                 msg = "로그인 정보 읽기 실패. 다시 로그인 필요";
                 break;
             case YtErrorKind.MembersOnly: msg = "멤버십 전용 영상"; break;

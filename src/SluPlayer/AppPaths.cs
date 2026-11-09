@@ -33,11 +33,20 @@ public static class AppPaths
     /// <summary>yt-dlp's own cache (player JS etc.), passed as --cache-dir.</summary>
     public static string YtDlpCacheDir => Path.Combine(LocalDir, "yt-dlp-cache");
 
+    /// <summary>The in-app sign-ins' cookie files and the per-run copies yt-dlp and mpv get.</summary>
+    public static string CookiesDir => Path.Combine(LocalDir, "cookies");
+
     /// <summary>Netscape cookies.txt exported from the in-app YouTube sign-in (passed to yt-dlp as --cookies).</summary>
-    public static string YouTubeCookiesFile => Path.Combine(LocalDir, "cookies", "youtube-cookies.txt");
+    public static string YouTubeCookiesFile => Path.Combine(CookiesDir, "youtube-cookies.txt");
+
+    /// <summary>Netscape cookies.txt exported from the in-app X sign-in.</summary>
+    public static string XCookiesFile => Path.Combine(CookiesDir, "x-cookies.txt");
 
     /// <summary>WebView2 user-data folder for the in-app YouTube sign-in window.</summary>
     public static string WebView2DataDir => Path.Combine(LocalDir, "webview2");
+
+    /// <summary>WebView2 user-data folder for the in-app X sign-in window (its own, so each sign-out clears one site).</summary>
+    public static string XWebView2DataDir => Path.Combine(LocalDir, "webview2-x");
 
     public static string DefaultDownloadDir => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "SluPlayer");

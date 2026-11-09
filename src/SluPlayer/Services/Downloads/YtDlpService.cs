@@ -170,27 +170,27 @@ public sealed class CookieLease : IDisposable
         _tempFile = tempFile;
     }
 
-    public static string RunDir => Path.Combine(Path.GetDirectoryName(AppPaths.YouTubeCookiesFile)!, "run");
+    public static string RunDir => Path.Combine(AppPaths.CookiesDir, "run");
 
-    /// <summary>A private copy of the sign-in cookies for one yt-dlp run (no arguments when signed out).</summary>
+    /// <summary>
+    /// A private copy of the sign-in cookies (every site, see <see cref="YtDlpCookies.WriteMerged"/>) for one yt-dlp
+    /// run; no arguments when signed out. The copy is a new file, so never read-only: yt-dlp saves it again at exit and
+    /// fails with exit code 1 when it can't.
+    /// </summary>
     public static CookieLease Acquire()
     {
-        if (!YtDlpCookies.HasYouTubeLogin) return new CookieLease([], null);
-        var value = AppPaths.YouTubeCookiesFile;
+        if (!YtDlpCookies.HasAny) return new CookieLease([], null);
         try
         {
             Directory.CreateDirectory(RunDir);
             var tmp = Path.Combine(RunDir, Guid.NewGuid().ToString("N") + ".txt");
-            File.Copy(value, tmp, overwrite: true);
-            // File.Copy keeps the attributes: yt-dlp can't save a read-only (or hidden) copy at exit and then
-            // fails with exit code 1, and the copy couldn't be deleted afterwards.
-            File.SetAttributes(tmp, FileAttributes.Normal);
-            return new CookieLease(["--cookies", tmp], tmp);
+            return YtDlpCookies.WriteMerged(tmp) ? new CookieLease(["--cookies", tmp], tmp) : new CookieLease([], null);
         }
         catch (Exception ex)
         {
-            Log.Warn("cookie copy failed, using the file directly: " + ex.Message);
-            return File.Exists(value) ? new CookieLease(["--cookies", value], null) : new CookieLease([], null);
+            // Never the saved files themselves (yt-dlp would rewrite them).
+            Log.Warn("cookie copy failed, running without sign-in: " + ex.Message);
+            return new CookieLease([], null);
         }
     }
 

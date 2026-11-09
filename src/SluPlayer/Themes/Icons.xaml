@@ -57,6 +57,7 @@
     <sys:String x:Key="Icon.Video">&#xE714;</sys:String>
     <sys:String x:Key="Icon.Music">&#xEC4F;</sys:String>
     <sys:String x:Key="Icon.Youtube">&#xE786;</sys:String>
+    <sys:String x:Key="Icon.Account">&#xE77B;</sys:String>
     <sys:String x:Key="Icon.ChevronDown">&#xE70D;</sys:String>
     <sys:String x:Key="Icon.ChevronRight">&#xE76C;</sys:String>
 
