@@ -1025,6 +1025,12 @@
     <ControlTemplate x:Key="ScrollBar.Template.Vertical" TargetType="{x:Type ScrollBar}">
         <Grid x:Name="Root" Background="Transparent" SnapsToDevicePixels="True">
             <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="0,2">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="{x:Static ScrollBar.PageUpCommand}" Style="{StaticResource Slider.Repeat.Transparent}" />
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="{x:Static ScrollBar.PageDownCommand}" Style="{StaticResource Slider.Repeat.Transparent}" />
+                </Track.IncreaseRepeatButton>
                 <Track.Thumb>
                     <Thumb x:Name="Thumb" Style="{StaticResource ScrollBar.Thumb}" Width="6" Margin="0,0,2,0"
                            HorizontalAlignment="Right" Background="{StaticResource Brush.ScrollThumb}" />
@@ -1058,6 +1064,12 @@
     <ControlTemplate x:Key="ScrollBar.Template.Horizontal" TargetType="{x:Type ScrollBar}">
         <Grid x:Name="Root" Background="Transparent" SnapsToDevicePixels="True">
             <Track x:Name="PART_Track" IsDirectionReversed="False" Margin="2,0">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}" Style="{StaticResource Slider.Repeat.Transparent}" />
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Command="{x:Static ScrollBar.PageRightCommand}" Style="{StaticResource Slider.Repeat.Transparent}" />
+                </Track.IncreaseRepeatButton>
                 <Track.Thumb>
                     <Thumb x:Name="Thumb" Style="{StaticResource ScrollBar.Thumb}" Height="6" Margin="0,0,0,2"
                            VerticalAlignment="Bottom" Background="{StaticResource Brush.ScrollThumb}" />

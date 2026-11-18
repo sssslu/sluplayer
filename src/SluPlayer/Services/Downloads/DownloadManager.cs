@@ -37,6 +37,7 @@ public sealed class DownloadManager
 
     private readonly Dispatcher _ui;
     private readonly Dictionary<string, Job> _jobs = new();
+    private readonly List<PartialCleanup> _pendingCleanups = new();
     private readonly DispatcherTimer _saveTimer;
     private readonly object _saveLock = new();
     private long _seq;
@@ -237,7 +238,8 @@ public sealed class DownloadManager
         if (_shuttingDown) return;
         while (_jobs.Count < MaxConcurrent)
         {
-            var next = Items.Where(i => i.State == DownloadState.Queued).OrderBy(i => i.Seq).FirstOrDefault();
+            var next = Items.Where(i => i.State == DownloadState.Queued && !HasPendingCleanup(i))
+                .OrderBy(i => i.Seq).FirstOrDefault();
             if (next == null) break;
             Start(next);
         }
@@ -683,6 +685,41 @@ public sealed class DownloadManager
     private static readonly HashSet<string> SideExts = new(StringComparer.OrdinalIgnoreCase)
         { ".webp", ".jpg", ".jpeg", ".png", ".vtt", ".srt", ".ass", ".lrc", ".ttml", ".srv3", ".json3" };
 
+    private sealed record PartialCleanup(string Directory, string Stem, string Key, string ItemId);
+    private sealed record CleanupFile(string Path, long Length, DateTime CreatedUtc, DateTime WrittenUtc, bool SharedSide);
+
+    private static string DirectoryKey(string path)
+    {
+        try { return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
+        catch { return path; }
+    }
+
+    private bool HasPendingCleanup(DownloadItem item)
+    {
+        if (_pendingCleanups.Count == 0) return false;
+        var dir = DirectoryKey(item.OutputDir);
+        var stem = item.PartialName is { } name ? Path.GetFileNameWithoutExtension(name) : null;
+        return _pendingCleanups.Any(c => string.Equals(c.Directory, dir, StringComparison.OrdinalIgnoreCase)
+            && (c.Key == item.Key || string.Equals(c.Stem, stem, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    // Snapshot ownership on the UI thread on every pass: another item may have paused, resumed or learned its
+    // file name while a locked file was waiting. Queued retries with no files yet are not owners.
+    private string[] CleanupProtectedNames(PartialCleanup cleanup)
+        => Items.Where(i => i.Id != cleanup.ItemId
+                           && string.Equals(DirectoryKey(i.OutputDir), cleanup.Directory, StringComparison.OrdinalIgnoreCase)
+                           && (i.IsRunning || i.State == DownloadState.Paused
+                               || i.State == DownloadState.Queued && i.PartialName != null || i.IsCompleted))
+            .SelectMany(i =>
+            {
+                var name = i.IsCompleted ? i.FilePath : i.PartialName;
+                if (name == null) return i.Key == cleanup.Key ? new[] { "*" } : Array.Empty<string>();
+                if (!string.Equals(Path.GetFileNameWithoutExtension(name), cleanup.Stem, StringComparison.OrdinalIgnoreCase))
+                    return Array.Empty<string>();
+                return new[] { Path.GetFileName(name) }.Concat((i.FormatIds ?? "")
+                    .Split('+', StringSplitOptions.RemoveEmptyEntries).Select(id => cleanup.Stem + ".f" + id + "."));
+            }).ToArray();
+
     /// <summary>
     /// Deletes what an unfinished download left behind: *.part, *.ytdl, fragment files, per-format intermediates
     /// (Title.f399.mp4) and side files written by this job (thumbnails/subtitles). Runs in the background with retries
@@ -700,56 +737,84 @@ public sealed class DownloadManager
         var stem = Path.GetFileNameWithoutExtension(name);
         if (dir == null || stem.Length == 0) return;
 
-        // Decided on the UI thread (Items is UI-thread only).
-        bool shared = Items.Any(i => !ReferenceEquals(i, item) && (i.IsActive || i.State == DownloadState.Paused)
-                                     && i.PartialName is { } other
-                                     && string.Equals(Path.GetDirectoryName(other), dir, StringComparison.OrdinalIgnoreCase)
-                                     && string.Equals(Path.GetFileNameWithoutExtension(other), stem, StringComparison.OrdinalIgnoreCase));
-        var ownPrefixes = new List<string> { Path.GetFileName(name) };
-        foreach (var id in (item.FormatIds ?? "").Split('+', StringSplitOptions.RemoveEmptyEntries))
-            ownPrefixes.Add(stem + ".f" + id + ".");
+        // Register before scheduling any disk work. Cancel/retry and remove/re-enqueue may change the item or give
+        // it a new Id, but the same video in this folder must wait until its earlier cleanup has finished.
+        var cleanup = new PartialCleanup(DirectoryKey(dir), stem, item.Key, item.Id);
+        _pendingCleanups.Add(cleanup);
 
         _ = Task.Run(async () =>
         {
-            for (int attempt = 0; attempt < 6; attempt++)
+            try
             {
-                if (attempt > 0) await Task.Delay(500 * attempt);
-                bool pending = false;
-                try
+                if (!Directory.Exists(dir)) return;
+                // Enumerate once. Retrying a lock must never discover and delete files made by a later run.
+                var files = new List<CleanupFile>();
+                foreach (var f in Directory.EnumerateFiles(dir, stem + ".*"))
                 {
-                    if (!Directory.Exists(dir)) return;
-                    foreach (var f in Directory.EnumerateFiles(dir, stem + ".*"))
+                    var info = new FileInfo(f);
+                    var rest = info.Name[stem.Length..];
+                    bool partial = rest.Contains(".part", StringComparison.OrdinalIgnoreCase)
+                                   || rest.EndsWith(".ytdl", StringComparison.OrdinalIgnoreCase)
+                                   || rest.Contains(".temp.", StringComparison.OrdinalIgnoreCase)
+                                   || FormatPartRe.IsMatch(rest);
+                    bool side = SideExts.Contains(info.Extension) && info.LastWriteTimeUtc >= since;
+                    bool final = !finalExistedBefore && string.Equals(f, name, StringComparison.OrdinalIgnoreCase)
+                                 && info.LastWriteTimeUtc >= since;
+                    if (sideFilesOnly ? side : partial || side || final)
+                        files.Add(new CleanupFile(f, info.Length, info.CreationTimeUtc, info.LastWriteTimeUtc, side || final));
+                }
+
+                for (int attempt = 0; files.Count > 0 && attempt < 6; attempt++)
+                {
+                    if (attempt > 0) await Task.Delay(500 * attempt);
+                    if (_ui.HasShutdownStarted) return;
+                    var protectedNames = await _ui.InvokeAsync(() => CleanupProtectedNames(cleanup));
+                    foreach (var file in files.ToArray())
                     {
-                        var fileName = Path.GetFileName(f);
-                        var rest = fileName[stem.Length..];
-                        bool partial = rest.Contains(".part", StringComparison.OrdinalIgnoreCase)
-                                       || rest.EndsWith(".ytdl", StringComparison.OrdinalIgnoreCase)
-                                       || rest.Contains(".temp.", StringComparison.OrdinalIgnoreCase)
-                                       || FormatPartRe.IsMatch(rest);
-                        bool side = SideExts.Contains(Path.GetExtension(f)) && File.GetLastWriteTimeUtc(f) >= since;
-                        bool final = !finalExistedBefore && string.Equals(f, name, StringComparison.OrdinalIgnoreCase)
-                                     && File.GetLastWriteTimeUtc(f) >= since;
-                        bool own = ownPrefixes.Any(p => fileName.StartsWith(p, StringComparison.OrdinalIgnoreCase))
-                                   && !string.Equals(fileName, Path.GetFileName(name), StringComparison.OrdinalIgnoreCase);
-                        bool delete = sideFilesOnly ? side && !shared
-                            : shared ? own && partial
-                            : partial || side || final;
-                        if (!delete) continue;
+                        var fileName = Path.GetFileName(file.Path);
+                        if (protectedNames.Length > 0 && (file.SharedSide || protectedNames.Any(p => p == "*"
+                                || fileName.Equals(p, StringComparison.OrdinalIgnoreCase)
+                                || fileName.StartsWith(p.EndsWith('.') ? p : p + ".", StringComparison.OrdinalIgnoreCase))))
+                        {
+                            files.Remove(file); // another download owns it; leave its data alone
+                            continue;
+                        }
                         try
                         {
-                            File.Delete(f);
+                            var current = new FileInfo(file.Path);
+                            if (!current.Exists || current.Length != file.Length || current.CreationTimeUtc != file.CreatedUtc
+                                || current.LastWriteTimeUtc != file.WrittenUtc)
+                            {
+                                files.Remove(file); // removed/replaced/modified since this cleanup began
+                                continue;
+                            }
+                            File.Delete(file.Path);
+                            files.Remove(file);
                             Log.Info("deleted partial file: " + fileName);
                         }
-                        catch (IOException) { pending = true; }
-                        catch (UnauthorizedAccessException) { pending = true; }
+                        catch (IOException) { }
+                        catch (UnauthorizedAccessException) { }
                     }
                 }
-                catch (Exception ex)
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("partial cleanup failed: " + ex.Message);
+            }
+            finally
+            {
+                if (!_ui.HasShutdownStarted)
                 {
-                    Log.Warn("partial cleanup failed: " + ex.Message);
-                    return;
+                    try
+                    {
+                        await _ui.InvokeAsync(() =>
+                        {
+                            _pendingCleanups.Remove(cleanup);
+                            Pump();
+                        });
+                    }
+                    catch (TaskCanceledException) when (_ui.HasShutdownStarted) { }
                 }
-                if (!pending) return;
             }
         });
     }

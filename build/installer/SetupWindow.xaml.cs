@@ -15,7 +15,6 @@ namespace SluPlayer.Setup
 
         private readonly SetupOptions _options;
         private readonly Payload _payload;          // install mode
-        private readonly ExistingInstall _existing; // install mode
         private readonly Manifest _manifest;        // uninstall mode
         private readonly string _uninstallDir;      // uninstall mode
         private readonly bool _uninstall;
@@ -34,7 +33,6 @@ namespace SluPlayer.Setup
             InitializeComponent();
             _options = options;
             _payload = payload;
-            _existing = existing;
 
             int cmp = existing == null ? 0 : CompareVersions(Installer.Version, existing.Version);
             bool update = existing != null && cmp > 0;

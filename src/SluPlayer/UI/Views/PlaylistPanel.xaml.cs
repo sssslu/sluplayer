@@ -257,7 +257,7 @@ public partial class PlaylistPanel : UserControl
     {
         if (_items.Count <= 1) return;
         _player.ClearPlaylist();
-        _player.ShowOsd("목록 비움");
+        _player.ShowOsd("다른 항목 지움");
     }
 
     private void PlaylistList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

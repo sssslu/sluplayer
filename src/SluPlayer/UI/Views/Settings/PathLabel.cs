@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,9 +13,6 @@ public sealed class PathLabel : TextBlock
 {
     public static readonly DependencyProperty PathProperty = DependencyProperty.Register(
         nameof(Path), typeof(string), typeof(PathLabel), new FrameworkPropertyMetadata("", FrameworkPropertyMetadataOptions.AffectsMeasure, (d, _) => ((PathLabel)d).UpdateText()));
-
-    public static readonly DependencyProperty PlaceholderProperty = DependencyProperty.Register(
-        nameof(Placeholder), typeof(string), typeof(PathLabel), new PropertyMetadata("", (d, _) => ((PathLabel)d).UpdateText()));
 
     private double _lastWidth = -1;
 
@@ -37,20 +33,13 @@ public sealed class PathLabel : TextBlock
         set => SetValue(PathProperty, value);
     }
 
-    /// <summary>Shown (dimmed) when <see cref="Path"/> is empty.</summary>
-    public string Placeholder
-    {
-        get => (string)GetValue(PlaceholderProperty);
-        set => SetValue(PlaceholderProperty, value);
-    }
-
     private void UpdateText()
     {
         var path = Path ?? "";
         ToolTip = string.IsNullOrEmpty(path) ? null : path;
         if (path.Length == 0)
         {
-            Text = Placeholder;
+            Text = "";
             Opacity = 0.6;
             return;
         }

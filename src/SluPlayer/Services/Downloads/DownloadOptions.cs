@@ -112,7 +112,9 @@ public static class DownloadArgs
         string sort = o.Container == "mp4"
             ? $"lang,{res},fps,hdr:12,vcodec,acodec:aac"   // best picture; AAC audio fits MP4 best
             : $"lang,{res},fps,hdr:12";                    // default codec order (AV1/VP9 + Opus) into MKV
-        return ["-f", "bv*+ba/b", "-S", sort, "--merge-output-format", o.Container];
+        // merge-output-format only applies to separate audio/video streams. A progressive file also needs
+        // remux-video to honour the selected container; yt-dlp skips that step when it already matches.
+        return ["-f", "bv*+ba/b", "-S", sort, "--merge-output-format", o.Container, "--remux-video", o.Container];
     }
 }
 

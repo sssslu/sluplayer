@@ -85,7 +85,7 @@
                     </HeaderedContentControl>
                     <HeaderedContentControl Style="{StaticResource Row}" Header="파일 연결">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource Status}" Text="{Binding AssociationStatus}" AutomationProperties.Name="파일 연결 상태" />
+                            <TextBlock Style="{StaticResource Status}" Text="{Binding AssociationStatus}" AutomationProperties.Name="{Binding AssociationStatus, StringFormat='파일 연결 {0}'}" />
                             <Button Style="{StaticResource Btn.Secondary}" Content="등록" Command="{Binding RegisterAssociationsCommand}"
                                     AutomationProperties.Name="파일 연결 등록" />
                         </StackPanel>
@@ -145,14 +145,14 @@
                     </HeaderedContentControl>
                     <HeaderedContentControl Style="{StaticResource Row}" Header="YouTube 계정">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource Status}" Text="{Binding YouTubeStatus}" AutomationProperties.Name="YouTube 계정 상태" />
+                            <TextBlock Style="{StaticResource Status}" Text="{Binding YouTubeStatus}" AutomationProperties.Name="{Binding YouTubeStatus, StringFormat='YouTube {0}'}" />
                             <Button Style="{StaticResource Btn.Secondary}" Content="{Binding YouTubeAction}" Command="{Binding YouTubeAccountCommand}"
                                     AutomationProperties.Name="{Binding YouTubeAction, StringFormat='YouTube {0}'}" />
                         </StackPanel>
                     </HeaderedContentControl>
                     <HeaderedContentControl Style="{StaticResource Row}" Header="X 계정">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource Status}" Text="{Binding XStatus}" AutomationProperties.Name="X 계정 상태" />
+                            <TextBlock Style="{StaticResource Status}" Text="{Binding XStatus}" AutomationProperties.Name="{Binding XStatus, StringFormat='X {0}'}" />
                             <Button Style="{StaticResource Btn.Secondary}" Content="{Binding XAction}" Command="{Binding XAccountCommand}"
                                     AutomationProperties.Name="{Binding XAction, StringFormat='X {0}'}" />
                         </StackPanel>
@@ -164,7 +164,7 @@
             <TextBlock Style="{StaticResource Group}" Text="정보" />
             <Border Style="{StaticResource GroupCard}">
                 <HeaderedContentControl Style="{StaticResource Row}" Header="버전" BorderThickness="0">
-                    <TextBlock Style="{StaticResource Status}" Margin="0" Text="{Binding AppVersion}" AutomationProperties.Name="버전" />
+                    <TextBlock Style="{StaticResource Status}" Margin="0" Text="{Binding AppVersion}" AutomationProperties.Name="{Binding AppVersion, StringFormat='버전 {0}'}" />
                 </HeaderedContentControl>
             </Border>
         </StackPanel>

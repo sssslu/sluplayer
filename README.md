@@ -10,7 +10,7 @@
 
 ### **[최신 버전 받기 (Releases)](https://github.com/sssslu/sluplayer/releases/latest)**
 
-최신 버전 **1.1.0**: X 로그인 지원과 재생 시작 개선. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.1.0)
+최신 버전 **1.1.1**: 정지·다운로드 재시도·저장 형식·설치 안정성 개선. X 로그인 지원 포함. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.1.1)
 
 | 파일 | 설명 |
 |---|---|

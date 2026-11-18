@@ -23,7 +23,7 @@
     <Company>slu</Company>
     <Description>SluPlayer Setup</Description>
     <Copyright>Copyright (c) 2026 slu</Copyright>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <DebugType>none</DebugType>
     <AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>

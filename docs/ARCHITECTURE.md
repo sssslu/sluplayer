@@ -72,6 +72,7 @@ Themes/                  Colors.xaml, Icons.xaml, Controls.xaml (merged in that 
 - **Resume:** an `on_load` hook looks up `HistoryService` and sets `file-local-options/start`. Positions live in `history.json` (mpv's watch-later files are not used).
 - **Late video start:** some recordings (go2rtc dashcam clips) start their video up to ~1.5 s after their audio; mpv starts at the first video frame and drops the audio before it. When a local file's first restart lands ≥ 0.25 s in (no start position), the engine reopens it (`playlist-play-index current`) with `file-local-options/vf` = ffmpeg `fps=source_fps:start_time=0`, which fills the gap with copies of the first frame, and drops the filter once playback is past it. Seeks can't do this (the demuxer aligns the audio to the video keyframe), so a later seek into the gap (Home, replay, loop-file) reopens the file the same way.
 - **Opening:** `Open`/`OpenMany` scan folders off the UI thread and apply requests in order (`_openQueue`). Lists of more than 16 local files go to mpv as one `loadlist` of a temporary `.m3u8` (`LoadEntries`); one async `loadfile` per entry would overflow mpv's 1000-slot client event queue for big folders. Opening a file unpauses (keep-open leaves the player paused at the end of the last file).
+- **Stop:** cancels pending opens, appends and sibling scans without waiting for disk I/O. The playlist stays available; an ongoing restoration of its natural order when shuffle is disabled is allowed to finish.
 - **Folder auto-playlist:** once a single local file has loaded, its sibling media files are scanned off the UI thread and inserted around it in natural sort order (`loadlist … insert-at 0` / `append`), unless the user opened or queued something else meanwhile.
 - **Window auto-fit:** sized on the first frame of a file (`PlayerEngine.MediaReady`, which re-reads `video-params` synchronously because property notifications trail mpv's events).
 - **Online streams:** mpv's built-in `ytdl_hook` runs the bundled `yt-dlp.exe` (`script-opts ytdl_hook-ytdl_path`, `ytdl-raw-options js-runtimes=deno:...`), up to 1080p.
@@ -94,6 +95,8 @@ Themes/                  Colors.xaml, Icons.xaml, Controls.xaml (merged in that 
 
 ### Downloads
 - `DownloadManager` (singleton, UI thread) runs up to two yt-dlp processes, parses their `--progress-template` output, and saves the list to `downloads.json`.
+- Partial-file cleanup runs off the UI thread. Pending cleanup blocks only matching videos/file stems in the same output folder; retries remain queued while other downloads can start. Cleanup snapshots candidate files once and rechecks ownership and file metadata before deletion.
+- Video downloads use the selected MP4/MKV container for both merged and progressive streams (`--merge-output-format` + `--remux-video`). Remuxing copies the encoded streams; an already-matching container skips that step.
 - yt-dlp, ffmpeg and deno run in a kill-on-close job object (`ChildProcessJob`), so they never outlive SluPlayer. On exit `AppLifetime` asks before closing while downloads run; running items are paused, saved and come back paused on the next start.
 
 ## Conventions

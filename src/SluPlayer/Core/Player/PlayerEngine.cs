@@ -700,10 +700,11 @@ public sealed class PlayerEngine : ObservableObject
     // =====================================================================
 
     private const int MaxFolderSiblings = 5000;
-    private int _openSeq;      // bumped by every request that replaces the playlist
+    private int _openSeq;      // bumped when pending opens are superseded (replace, clear, stop)
+    private int _playlistSeq;  // replacement/clear only: Stop must not interrupt a pending unshuffle
     private int _appendSeq;    // bumped by every request that appends to it
     private Task _openQueue = Task.CompletedTask;
-    private CancellationTokenSource _openCts = new(); // folder scans of the requests since the last replace
+    private CancellationTokenSource _openCts = new(); // scans and waits belonging to the current open sequence
     private string? _siblingsPendingFor;
     private double _historyPos; // the position this engine last stored for the loaded file
     private int _shuffleSeq;    // bumped by every shuffle toggle
@@ -758,16 +759,20 @@ public sealed class PlayerEngine : ObservableObject
     }
 
     /// <summary>
-    /// A request that replaces the playlist (or clears it): requests made before it are dropped when their folder scan
-    /// ends, and the scans are cancelled. Nothing queued later waits for them.
+    /// Invalidates pending opens and cancels their scans/waits. New requests never wait for the old ones.
+    /// Stop keeps the playlist, including the order needed to turn shuffle off later.
     /// </summary>
-    private void SupersedeOpens()
+    private void SupersedeOpens(bool clearShuffleOrder = true)
     {
         _openSeq++;
         _openQueue = Task.CompletedTask;
         _openCts.Cancel();
         _openCts = new CancellationTokenSource();
-        lock (_unplacedIds) _unplacedIds.Clear();
+        if (clearShuffleOrder)
+        {
+            _playlistSeq++;
+            lock (_unplacedIds) _unplacedIds.Clear();
+        }
     }
 
     /// <summary>
@@ -793,9 +798,14 @@ public sealed class PlayerEngine : ObservableObject
         {
             var entries = items.Any(MightBeFolder) ? await Task.Run(() => ExpandFolders(items, cancel), cancel) : items;
             // An append keeps its place behind the requests before it; a replace supersedes them, so it doesn't wait.
-            if (append) await previous;
-            if (!_coreStarted.Task.IsCompleted) await Task.WhenAny(_coreStarted.Task, Task.Delay(3000));
-            if (_mpv == null || seq != _openSeq) return; // a newer replace (or a clear) superseded this request
+            if (append) await previous.WaitAsync(cancel);
+            if (!_coreStarted.Task.IsCompleted)
+            {
+                try { await _coreStarted.Task.WaitAsync(TimeSpan.FromSeconds(3), cancel); }
+                catch (TimeoutException) { } // preserve the startup fallback if mpv did not report idle
+            }
+            cancel.ThrowIfCancellationRequested();
+            if (_mpv == null || seq != _openSeq) return;
             if (entries.Count == 0)
             {
                 OpenRejected?.Invoke(this, "재생할 파일 없음");
@@ -804,11 +814,11 @@ public sealed class PlayerEngine : ObservableObject
             // With shuffle on, a list that is opened plays in random order; items added to the playlist keep their order.
             var loading = LoadEntries(entries, append ? "append-play" : "replace", shuffle: !append && IsShuffled);
             if (!append) _mpv.SetPropertyAsync("pause", false);
-            await loading;
+            await loading.WaitAsync(cancel);
         }
         catch (OperationCanceledException)
         {
-            // superseded while scanning
+            // Replaced, cleared or stopped while scanning, waiting, or sending a large list.
         }
         catch (Exception ex)
         {
@@ -960,6 +970,7 @@ public sealed class PlayerEngine : ObservableObject
     private async void AddFolderSiblingsAsync(string file)
     {
         int seq = _openSeq, appendSeq = _appendSeq;
+        var cancel = _openCts.Token;
         var kind = MediaFormats.Classify(file);
         List<string> siblings;
         int idx;
@@ -969,9 +980,13 @@ public sealed class PlayerEngine : ObservableObject
             {
                 var dir = Path.GetDirectoryName(Path.GetFullPath(file));
                 if (dir == null) return (new List<string>(), -1);
-                var list = MediaFormats.EnumerateFolder(dir, recursive: false).Where(f => MediaFormats.Classify(f) == kind).ToList();
+                var list = MediaFormats.EnumerateFolder(dir, recursive: false, cancel).Where(f => MediaFormats.Classify(f) == kind).ToList();
                 return (list, list.FindIndex(f => SamePath(f, file)));
-            });
+            }, cancel);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch (Exception ex)
         {
@@ -1043,6 +1058,8 @@ public sealed class PlayerEngine : ObservableObject
     public void Stop()
     {
         if (_mpv == null) return;
+        SupersedeOpens(clearShuffleOrder: false);
+        _siblingsPendingFor = null;
         _mpv.CommandAsync("stop", "keep-playlist");
     }
 
@@ -1180,8 +1197,8 @@ public sealed class PlayerEngine : ObservableObject
     {
         long[] ids;
         lock (_unplacedIds) { ids = [.. _unplacedIds]; _unplacedIds.Clear(); }
-        int toggles = _shuffleSeq, seq = _openSeq;
-        bool Stale() => toggles != _shuffleSeq || seq != _openSeq;
+        int toggles = _shuffleSeq, seq = _playlistSeq;
+        bool Stale() => toggles != _shuffleSeq || seq != _playlistSeq;
         SendInChunks(mpv, MoveCommands(mpv, ids, toFront: true), 0, Stale, null, () =>
         {
             if (Stale()) return;

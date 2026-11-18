@@ -20,7 +20,7 @@
     <Company>slu</Company>
     <Description>SluPlayer - GPU accelerated media player and online video downloader</Description>
     <Copyright>Copyright (c) 2026 slu</Copyright>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <TieredPGO>true</TieredPGO>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>

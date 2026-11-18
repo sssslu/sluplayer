@@ -19,15 +19,13 @@ public readonly record struct MpvEndFileInfo(MpvEndFileReason Reason, int Error,
 /// </summary>
 public sealed unsafe class MpvClient : IDisposable
 {
-    private sealed record Observer(string Name, MpvFormat Format, Action<object?> Callback);
-
     private nint _handle;
     private nint _eventHandle;
     private Thread? _eventThread;
     private volatile bool _stopRequested;
     private int _disposed;
     private long _nextReplyId = 1;
-    private readonly ConcurrentDictionary<ulong, Observer> _observers = new();
+    private readonly ConcurrentDictionary<ulong, Action<object?>> _observers = new();
     private readonly ConcurrentDictionary<ulong, Action<int, object?>> _commandCallbacks = new();
     private readonly string _name;
 
@@ -213,7 +211,7 @@ public sealed unsafe class MpvClient : IDisposable
     public ulong ObserveProperty(string name, MpvFormat format, Action<object?> callback)
     {
         ulong id = (ulong)Interlocked.Increment(ref _nextReplyId);
-        _observers[id] = new Observer(name, format, callback);
+        _observers[id] = callback;
         int r = MpvNative.mpv_observe_property(_handle, id, name, format);
         if (r < 0)
         {
@@ -277,11 +275,11 @@ public sealed unsafe class MpvClient : IDisposable
 
             case MpvEventId.PropertyChange:
             {
-                if (_observers.TryGetValue(ev->ReplyUserdata, out var obs))
+                if (_observers.TryGetValue(ev->ReplyUserdata, out var callback))
                 {
                     var prop = (MpvEventProperty*)ev->Data;
                     object? value = prop == null ? null : MpvNodeConverter.ReadData(prop->Format, prop->Data);
-                    obs.Callback(value);
+                    callback(value);
                 }
                 break;
             }

@@ -236,6 +236,22 @@ namespace SluPlayer.Setup
                 return zip.Entries.Sum(e => e.Length);
         }
 
+        private static long RequiredFreeSpace(IEnumerable<PayloadFile> files, string installDir, long setupBytes)
+        {
+            // Each .new file coexists with the old target until ReplaceFile succeeds. Account for the
+            // peak in copy order, including space already freed by earlier replacements. Metadata only.
+            long growth = 0, peak = 0;
+            foreach (var file in files)
+            {
+                var target = new FileInfo(Path.Combine(installDir, file.Relative));
+                peak = Math.Max(peak, growth + file.Entry.Length);
+                growth += file.Entry.Length - (target.Exists ? target.Length : 0);
+            }
+            // The uninstaller is written after the payload, also through a .new file.
+            peak = Math.Max(peak, growth + setupBytes);
+            return peak + 64L * 1024 * 1024;
+        }
+
         public static void Install(SetupOptions o, string installDir, bool desktopShortcut, Payload payload, IProgress<SetupProgress> progress)
         {
             Log.Write($"install {Version} into {installDir} (desktop={desktopShortcut}, regkey={o.RegKey})");
@@ -252,14 +268,7 @@ namespace SluPlayer.Setup
                 var files = ListFiles(zip, installDir);
                 long total = files.Sum(f => f.Entry.Length);
 
-                // Free space: what we write minus what we overwrite, plus some room.
-                long existing = 0;
-                foreach (var f in files)
-                {
-                    var t = Path.Combine(installDir, f.Relative);
-                    if (File.Exists(t)) existing += new FileInfo(t).Length;
-                }
-                long need = Math.Max(0, total - existing) + 64L * 1024 * 1024;
+                long need = RequiredFreeSpace(files, installDir, payload.Offset);
                 try
                 {
                     var free = new DriveInfo(Path.GetPathRoot(installDir)).AvailableFreeSpace;
