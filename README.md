@@ -10,6 +10,8 @@
 
 ### **[최신 버전 받기 (Releases)](https://github.com/sssslu/sluplayer/releases/latest)**
 
+최신 버전 **1.1.0**: X 로그인 지원과 재생 시작 개선. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.1.0)
+
 | 파일 | 설명 |
 |---|---|
 | `SluPlayer-Setup-<버전>.exe` | **설치 프로그램 (추천)**. 시작 메뉴 등록, 연결 프로그램 등록 |
@@ -209,6 +211,7 @@ README.txt               이 문서의 사용자용 부분
 - `dist\SluPlayer\`에 만든 `portable.txt`와 `data\`는 다시 빌드해도 지우지 않는다.
 - `dist\`(약 1 GB)는 git에 올리지 않는다(`.gitignore`). 다른 위치에 만들려면 `-OutDir`.
 - 배포: `dist\`의 Setup exe, zip, `.sha256` 파일을 GitHub Releases에 올린다.
+- 소스를 `git push`하는 것만으로 배포 파일이 갱신되지는 않는다. 앱·설치 프로그램의 버전을 올리고 변경 사항을 커밋한 뒤 빌드한다. 검증한 커밋에 `v<버전>` 태그를 붙이고, 그 태그의 새 릴리스에 Setup exe·zip·각 `.sha256` 파일을 올려 **Latest**로 공개한다.
 
 ### 4. 설치 프로그램
 `build\installer`의 작은 .NET Framework 4.7.2 프로그램(Windows 10 1803 이상·Windows 11에 기본 포함)에 zip을 붙여서 만든다(`build-installer.ps1`).
