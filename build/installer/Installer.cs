@@ -89,8 +89,20 @@ namespace SluPlayer.Setup
 
         internal static void ReplaceFile(string source, string target)
         {
-            if (File.Exists(target)) File.Replace(source, target, null, ignoreMetadataErrors: true);
-            else File.Move(source, target);
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(target)) File.Replace(source, target, null, ignoreMetadataErrors: true);
+                    else File.Move(source, target);
+                    return;
+                }
+                catch (IOException) when (attempt < 4 && File.Exists(source))
+                {
+                    // Scanners/sync clients can briefly hold a file after it is written. Normal installs never wait.
+                    Thread.Sleep(100 << attempt);
+                }
+            }
         }
     }
 
