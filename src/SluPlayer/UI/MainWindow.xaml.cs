@@ -216,6 +216,7 @@ public partial class MainWindow : Window, IShell
     private void ShowPage(ref PageWindow? field, Func<PageWindow> create)
     {
         if (_closing) return;
+        if (_menuOpenCount > 0) _menuOpenedWindow = true;
         bool quiet = QuietCommand;
         var w = field;
         if (w == null)

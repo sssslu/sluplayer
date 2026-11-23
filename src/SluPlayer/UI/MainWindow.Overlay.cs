@@ -18,6 +18,7 @@ public partial class MainWindow
     private long _lastActivityTick;
     private bool _cursorHidden;
     private int _menuOpenCount;
+    private bool _menuOpenedWindow; // a menu command showed a page window (it keeps the activation when the menu closes)
     private long _menuClosedTick;
     private const int AutoHideMs = 2500;
 
@@ -223,14 +224,21 @@ public partial class MainWindow
             menu.Placement = PlacementMode.MousePoint;
         }
         _menuOpenCount++;
+        _menuOpenedWindow = false;
+        nint foreground = Win32.GetForegroundWindow();
         ShowControls();
         menu.Closed += (_, _) =>
         {
             _menuOpenCount = Math.Max(0, _menuOpenCount - 1);
             _lastActivityTick = Environment.TickCount64;
             _menuClosedTick = Environment.TickCount64;
-            // Clicking another app dismisses the menu too: activation then belongs to that app.
-            if (IsVisible && !_closing && Win32.IsOwnProcessWindow(Win32.GetForegroundWindow())) Activate();
+            // Clicking another app dismisses the menu too: activation then belongs to that app. So it does when the
+            // chosen command opened one of our windows (settings, downloads, a dialog): WPF runs the command before
+            // this event, and activating the player now would put it in front of the window that just opened.
+            nint now = Win32.GetForegroundWindow();
+            bool opened = _menuOpenedWindow || now != foreground;
+            _menuOpenedWindow = false;
+            if (IsVisible && !_closing && !opened && Win32.IsOwnProcessWindow(now)) Activate();
         };
         menu.IsOpen = true;
     }
