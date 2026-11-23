@@ -39,6 +39,8 @@ public sealed class AppSettings
     /// <summary>none | file | playlist</summary>
     public string LoopMode { get; set; } = "none";
     public bool Shuffle { get; set; }
+    /// <summary>RTX 업스케일: NVIDIA RTX Video Super Resolution for videos smaller than the screen (RTX cards only).</summary>
+    public bool Upscale { get; set; }
     public bool PlaylistPanelOpen { get; set; }
     public DateTime LastYtDlpUpdateCheck { get; set; }
 }

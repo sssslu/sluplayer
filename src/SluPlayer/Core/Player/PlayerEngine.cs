@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using SluPlayer.Core.Interop;
 using SluPlayer.Core.Mpv;
 using SluPlayer.Services;
 using SluPlayer.Services.Settings;
@@ -201,6 +202,7 @@ public sealed class PlayerEngine : ObservableObject
     public void Initialize(nint wid)
     {
         if (_mpv != null) return;
+        _wid = wid;
         var mpv = new MpvClient("player");
         _mpv = mpv;
 
@@ -241,6 +243,7 @@ public sealed class PlayerEngine : ObservableObject
 
         // Resume support: decide the start position right before each file is opened.
         mpv.AddHook("on_load", 50, OnLoadHook);
+        mpv.AddHook("on_preloaded", 50, OnPreloadedHook);
 
         Observe(mpv);
         mpv.Initialize();
@@ -253,6 +256,18 @@ public sealed class PlayerEngine : ObservableObject
     private void OnMpvLog(MpvLogLevel level, string prefix, string text)
     {
         var line = $"[mpv/{prefix}] {text}";
+        if (level <= MpvLogLevel.Warn && prefix.EndsWith("d3d11vpp", StringComparison.Ordinal)
+            && text.Contains("Failed to enable", StringComparison.Ordinal) && !_upscaleFailed)
+        {
+            // No super resolution here (not an RTX card, old driver, ...): the filter would only replace mpv's scaler.
+            _upscaleFailed = true;
+            _ui.BeginInvoke(() =>
+            {
+                if (_mpv is not { } m) return;
+                SetUpscale(m, 0, refreshSeek: IsPaused);
+                ShowOsd(UpscaleName + " 미지원", 2500);
+            });
+        }
         if (level <= MpvLogLevel.Error) Log.Error(line);
         else if (level <= MpvLogLevel.Warn) Log.Warn(line);
         else Log.Info(line);
@@ -290,7 +305,7 @@ public sealed class PlayerEngine : ObservableObject
         On("loop-playlist", MpvFormat.Node, v => UpdateLoop(null, playlistLoop: IsLoopOn(v)));
         On("metadata", MpvFormat.Node, v => Metadata = ToStringMap(v));
         // Source display size, rotation applied.
-        On("video-params", MpvFormat.Node, SetSourceSize);
+        On("video-params", MpvFormat.Node, v => { SetSourceSize(v); UpdateUpscale(); });
 
         // ytdl_hook publishes yt-dlp's result here; keep the error to explain failed online streams.
         mpv.ObserveProperty("user-data/mpv/ytdl/json-subprocess-result", MpvFormat.Node, v =>
@@ -495,6 +510,7 @@ public sealed class PlayerEngine : ObservableObject
             IsLoading = false;
             // Property notifications trail the events: read the new file's video size directly.
             SetSourceSize(_mpv?.GetPropertyNode("video-params"));
+            UpdateUpscale();
             UpdateDerived();
             FlushPosition(force: true);
             MediaReady?.Invoke(this, EventArgs.Empty);
@@ -557,8 +573,9 @@ public sealed class PlayerEngine : ObservableObject
 
     private const double MinVideoStartGap = 0.25;
     private const double GapLandSlack = 0.25;
-    private const string GapFillFilter = "@slugap:lavfi=[fps=fps=source_fps:start_time=0]";
-    private readonly object _gapLock = new();
+    private const string GapFillLabel = "@slugap";
+    private const string GapFillFilter = GapFillLabel + ":lavfi=[fps=fps=source_fps:start_time=0]";
+    private readonly object _gapLock = new(); // this section's state and _upscale (event thread + UI thread)
     private string? _gapPath;     // the loaded file starts its video _gapStart seconds after its audio
     private double _gapStart;
     private bool _gapReopening;   // a reopen of _gapPath was requested
@@ -569,18 +586,20 @@ public sealed class PlayerEngine : ObservableObject
     /// <summary>Event thread, on_load. Returns true when this load is the reopen of a late-video file (filter on).</summary>
     private bool BeginGapLoad(MpvClient mpv, string path)
     {
-        bool reopen;
         lock (_gapLock)
         {
-            reopen = _gapReopening && _gapPath != null && SamePath(path, _gapPath);
+            bool reopen = _gapReopening && _gapPath != null && SamePath(path, _gapPath);
             _gapReopening = false;
             _gapRestarted = false;
             _seekTarget = null;
             _gapFilling = reopen;
+            _upscale = 0;
             if (!reopen) _gapPath = null;
+            // The engine's filters belong to one load: this one starts with the fill filter or none. Set under the lock:
+            // a filter the UI thread still sends for the previous video must come before it or count as this load's.
+            mpv.SetProperty("vf", reopen ? GapFillFilter : "");
+            return reopen;
         }
-        if (reopen) mpv.SetProperty("file-local-options/vf", GapFillFilter);
-        return reopen;
     }
 
     /// <summary>
@@ -647,7 +666,7 @@ public sealed class PlayerEngine : ObservableObject
             if (!_gapFilling || target < _gapStart) return;
             _gapFilling = false;
         }
-        _mpv?.SetPropertyAsync("file-local-options/vf", "");
+        _mpv?.CommandAsync("vf", "remove", GapFillLabel);
     }
 
     /// <summary>
@@ -667,7 +686,7 @@ public sealed class PlayerEngine : ObservableObject
             if (!_gapFilling) return;
             _gapFilling = false;
         }
-        _mpv?.SetPropertyAsync("file-local-options/vf", "");
+        _mpv?.CommandAsync("vf", "remove", GapFillLabel);
     }
 
     /// <summary>The loaded file is <paramref name="file"/>, or it is being reopened (late video start).</summary>
@@ -675,6 +694,110 @@ public sealed class PlayerEngine : ObservableObject
     {
         if (_loadedPath != null) return SamePath(_loadedPath, file);
         lock (_gapLock) return (_gapReopening || _gapFilling) && _gapPath != null && SamePath(_gapPath, file);
+    }
+
+    // =====================================================================
+    // Upscaling
+    // =====================================================================
+    //
+    // NVIDIA RTX Video Super Resolution through mpv's d3d11vpp filter: the driver scales each frame to about the screen
+    // size before mpv renders it. Nothing extra is loaded, and the filter is only in the chain while the mode is on and
+    // the video is smaller than the screen. Only offered on RTX cards (others have no such scaler: the menu item and the
+    // filter are left out), and dropped for good when the driver refuses it (old driver).
+    // Measured with an RTX 4080 SUPER (2026-11): the driver leaves input below about 480x360 alone (the filter would
+    // then only replace mpv's better scaler), and works on 8- and 10-bit SDR. HDR was not tested and is left alone.
+    // Intel's VSR uses the same filter (scaling-mode=intel) but was never tested, so it is not offered.
+
+    public const string UpscaleName = "RTX 업스케일";
+    private const string UpscaleLabel = "@sluup";
+    private const long MinUpscalePixels = 480 * 360;
+    private const double MinUpscale = 1.2, MaxUpscale = 4;
+    private static readonly bool HasRtx = GpuInfo.RenderAdapter is { VendorId: GpuInfo.VendorNvidia } gpu
+                                          && gpu.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase);
+    private nint _wid;
+    private double _upscale;              // scale of this load's filter, 0 = none (_gapLock)
+    private volatile bool _upscaleFailed; // the driver refused
+
+    public bool CanUpscale => HasRtx && !_upscaleFailed;
+    public bool IsUpscaleOn => _settings.Upscale;
+
+    /// <summary>The mode applies to every video it can help, across restarts.</summary>
+    public void ToggleUpscale()
+    {
+        if (_mpv == null || !CanUpscale) return;
+        _settings.Upscale = !_settings.Upscale;
+        bool applied = UpdateUpscale();
+        ShowOsd(!_settings.Upscale ? UpscaleName + " 끔"
+            : applied || !HasVideo ? UpscaleName + " 켬"
+            : UpscaleName + " 켬 (이 영상 해당 없음)", 2000);
+    }
+
+    /// <summary>
+    /// Event thread, on_preloaded (tracks known, nothing decoded yet): the filter is in place before the first frame.
+    /// With several video tracks it waits for the selected one to decode (<see cref="UpdateUpscale"/>).
+    /// </summary>
+    private void OnPreloadedHook()
+    {
+        var mpv = _mpv;
+        if (mpv == null || !_settings.Upscale || !CanUpscale) return;
+        if (mpv.GetPropertyNode("track-list") is not List<object?> tracks) return;
+        var videos = tracks.OfType<Dictionary<string, object?>>()
+            .Where(t => t.GetString("type") == "video" && !t.GetBool("image") && !t.GetBool("albumart")).ToList();
+        if (videos.Count != 1) return;
+        var v = videos[0];
+        double w = v.GetLong("demux-w") ?? 0, h = v.GetLong("demux-h") ?? 0, par = v.GetDouble("demux-par") ?? 1;
+        // Display size the way mpv derives it: non-square pixels stretch the longer side.
+        double dw = par > 1 ? w * par : w, dh = par > 0 && par < 1 ? h / par : h;
+        SetUpscale(mpv, UpscaleFor(w, h, dw, dh, v.GetLong("demux-rotation") ?? 0, null, null), refreshSeek: false);
+    }
+
+    /// <summary>UI thread: the filter for the video as it decodes (size and format are final). Returns true when it is on.</summary>
+    private bool UpdateUpscale()
+    {
+        var mpv = _mpv;
+        if (mpv == null) return false;
+        // Before the first frame mpv only reports the container's w and h here: that is not the decoded video yet.
+        if (mpv.GetPropertyNode("video-params") is Dictionary<string, object?> p && p.GetString("pixelformat") is { } format)
+        {
+            // Pictures and cover art stay as they are.
+            bool video = mpv.GetPropertyString("current-tracks/video/image") == "no";
+            SetUpscale(mpv, !video ? 0 : UpscaleFor(p.GetLong("w") ?? 0, p.GetLong("h") ?? 0, p.GetLong("dw") ?? 0,
+                p.GetLong("dh") ?? 0, p.GetLong("rotate") ?? 0, p.GetString("hw-pixelformat") ?? format, p.GetString("gamma")),
+                refreshSeek: IsPaused);
+        }
+        lock (_gapLock) return _upscale > 0;
+    }
+
+    /// <summary>The scale that brings the video to the screen's size, 0 when the filter should stay out.</summary>
+    /// <param name="format">Pixel format once decoded (null before): 4:2:0 only, the formats the filter passes through.</param>
+    private double UpscaleFor(double w, double h, double dw, double dh, long rotate, string? format, string? gamma)
+    {
+        if (!_settings.Upscale || !CanUpscale || w * h < MinUpscalePixels || dw <= 0 || dh <= 0) return 0;
+        if (gamma is "pq" or "hlg" || format is not (null or "nv12" or "p010" or "yuv420p" or "yuv420p10")) return 0;
+        // The monitor the player is on (physical pixels; mpv's display-width is not known before its first frame).
+        var info = new Win32.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32.MONITORINFO>() };
+        if (_wid == 0 || !Win32.GetMonitorInfo(Win32.MonitorFromWindow(_wid, Win32.MONITOR_DEFAULTTONEAREST), ref info)) return 0;
+        if (rotate % 180 != 0) (dw, dh) = (dh, dw);
+        double scale = Math.Min(Math.Min(info.rcMonitor.Width / dw, info.rcMonitor.Height / dh), MaxUpscale);
+        return scale < MinUpscale ? 0 : scale;
+    }
+
+    /// <param name="refreshSeek">
+    /// Paused: mpv seeks to the shown frame to run it through the new filters; that is no seek to the beginning
+    /// (see <see cref="CheckVideoStartGap"/>).
+    /// </param>
+    private void SetUpscale(MpvClient mpv, double scale, bool refreshSeek)
+    {
+        lock (_gapLock)
+        {
+            // The sizes known before and after decoding differ by rounding: that is the same filter.
+            if (scale == _upscale || scale > 0 && _upscale > 0 && Math.Abs(scale - _upscale) < 0.03) return;
+            _upscale = scale;
+            if (refreshSeek) _seekTarget = double.MaxValue;
+            // Sent under the lock: the event and UI threads must reach mpv in the order they decided.
+            if (scale <= 0) mpv.CommandAsync("vf", "remove", UpscaleLabel);
+            else mpv.CommandAsync("vf", "add", string.Create(Inv, $"{UpscaleLabel}:d3d11vpp=scaling-mode=nvidia:scale={scale:0.###}"));
+        }
     }
 
     private void FlushPosition(bool force = false)

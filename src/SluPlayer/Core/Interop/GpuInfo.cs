@@ -44,6 +44,19 @@ public static unsafe class GpuInfo
     /// <summary>Name to pass to mpv's d3d11-adapter, or null to let mpv use the default adapter.</summary>
     public static string? PreferredAdapterName => LazyPreferred.Value;
 
+    public const uint VendorNvidia = 0x10DE;
+
+    /// <summary>The adapter mpv renders with: the preferred one, else the default (first) adapter; null if unknown.</summary>
+    public static GpuAdapter? RenderAdapter
+    {
+        get
+        {
+            var hw = Adapters.Where(a => !a.IsSoftware && a.VendorId != 0x1414).ToList();
+            var name = PreferredAdapterName;
+            return hw.FirstOrDefault(a => a.Name == name) ?? hw.FirstOrDefault();
+        }
+    }
+
     private static IReadOnlyList<GpuAdapter> Enumerate()
     {
         var list = new List<GpuAdapter>();

@@ -131,7 +131,8 @@ public partial class MainWindow
 
     /// <summary>
     /// Command-line control of a running instance (used by scripts/tests): --key=Ctrl+Right, --fullscreen,
-    /// --windowed, --player, --page=download|online|settings, --controls, --menu, --seek=SECONDS, --dump-state=FILE, --quit.
+    /// --windowed, --player, --page=download|online|settings, --controls, --menu, --seek=SECONDS, --upscale (toggle),
+    /// --dump-state=FILE, --quit.
     /// </summary>
     public void ExecuteCommandArg(string arg)
     {
@@ -165,6 +166,10 @@ public partial class MainWindow
                     case "settings": ShowSettings(); break;
                 }
                 break;
+            case "upscale":
+                _player.ToggleUpscale();
+                SaveSettings();
+                break;
             case "dump-state" when value.Length > 0:
                 DumpState(value);
                 break;
@@ -194,6 +199,8 @@ public partial class MainWindow
             ["hasAlbumArt"] = p.HasAlbumArt,
             ["audioOnly"] = p.IsAudioOnly,
             ["hwdec"] = p.HwdecCurrent,
+            ["upscale"] = p.IsUpscaleOn,
+            ["videoFilters"] = p.GetRaw("vf"),
             ["videoCodec"] = p.GetRaw("video-codec"),
             ["vo"] = p.GetRaw("current-vo"),
             ["audioTracks"] = p.AudioTracks.Count,
