@@ -10,7 +10,7 @@
 
 ### **[최신 버전 받기 (Releases)](https://github.com/sssslu/sluplayer/releases/latest)**
 
-최신 버전 **1.1.1**: 정지·다운로드 재시도·저장 형식·설치 안정성 개선. X 로그인 지원 포함. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.1.1)
+최신 버전 **1.2.0**: RTX 업스케일 추가, 우클릭 메뉴로 연 설정·다운로드 창이 가려지던 문제 수정. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.2.0)
 
 | 파일 | 설명 |
 |---|---|
@@ -47,6 +47,7 @@ PowerShell에서 `(Get-FileHash .\SluPlayer-Setup-<버전>.exe).Hash`를 실행�
 - **재생**: MP4, MKV, AVI, MOV, WebM, TS/M2TS, FLV, WMV 등. H.264, HEVC, AV1, VP9 등. 4K, 10비트, HDR10(Windows HDR이 켜져 있으면 HDR 출력, 꺼져 있으면 톤 매핑)
 - **음악**: MP3, FLAC, M4A, Opus, OGG, WAV 등. 앨범 커버 표시
 - **GPU 가속**: Direct3D 11 렌더링 + 하드웨어 디코딩(d3d11va, NVDEC) 자동. GPU가 두 개면 고성능 GPU 사용
+- **RTX 업스케일**: 우클릭 → **RTX 업스케일**. 화면보다 작은 영상을 NVIDIA RTX Video Super Resolution으로 키운다(RTX 그래픽 카드 전용)
 - 이어 보기, 같은 폴더 파일 자동 재생목록, 재생 속도, 반복·무작위, 챕터, 스크린샷, 회전, 화면 비율
 - **자막**: SRT, SMI, ASS/SSA, VTT, 내장 자막. 한국어 우선, CP949(EUC-KR) 지원. 싱크·크기 조절
 - **URL 재생**: Ctrl+U 또는 링크 붙여넣기(Ctrl+V)
@@ -101,6 +102,12 @@ YouTube가 봇 확인을 요구하면 다운로드와 URL 재생이 실패한다
 
 ### GPU 가속 확인
 우클릭 → 영상 → 하드웨어 가속 → "현재" 항목. `d3d11va`·`nvdec`이면 GPU 디코딩, `CPU`면 소프트웨어 디코딩. 그래픽 카드가 코덱을 지원하지 않으면(예: 오래된 GPU의 AV1) 자동으로 CPU를 쓴다.
+
+### RTX 업스케일
+- 우클릭 메뉴에서 켜고 끈다. 켜 두면 다음 영상에도 적용된다.
+- NVIDIA RTX 그래픽 카드(RTX 20 시리즈 이상)와 최신 드라이버가 필요하다. 다른 그래픽 카드에서는 메뉴에 나오지 않고, 드라이버가 거부하면 "RTX 업스케일 미지원"이 뜬 뒤 꺼진다.
+- 적용 대상: 화면보다 작은 SDR 영상(약 480×360 이상). 화면 크기 이상이거나 HDR이면 원본 그대로 재생한다.
+- 프레임 생성(DLSS 프레임 생성 같은 기능)은 없다. 게임용 기술이라 영상에는 쓸 수 없다.
 
 ### "vulkan-1.dll이 없어서 실행할 수 없다" 오류
 그래픽 드라이버가 없는 PC(가상 머신 등)에서 난다. 그래픽 카드 제조사의 최신 드라이버나 [LunarG Vulkan Runtime](https://vulkan.lunarg.com/sdk/home) 설치.
