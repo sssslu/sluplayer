@@ -131,7 +131,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Command-line control of a running instance (used by scripts/tests): --key=Ctrl+Right, --fullscreen,
-    /// --windowed, --player, --page=download|online|settings, --controls, --menu, --seek=SECONDS, --upscale (toggle),
+    /// --windowed, --player, --page=download|online|settings, --controls, --menu, --seek=SECONDS, --upscale and --framegen (toggles),
     /// --dump-state=FILE, --quit.
     /// </summary>
     public void ExecuteCommandArg(string arg)
@@ -170,6 +170,10 @@ public partial class MainWindow
                 _player.ToggleUpscale();
                 SaveSettings();
                 break;
+            case "framegen":
+                _player.ToggleFrameGen();
+                SaveSettings();
+                break;
             case "dump-state" when value.Length > 0:
                 DumpState(value);
                 break;
@@ -200,7 +204,11 @@ public partial class MainWindow
             ["audioOnly"] = p.IsAudioOnly,
             ["hwdec"] = p.HwdecCurrent,
             ["upscale"] = p.IsUpscaleOn,
+            ["frameGen"] = p.IsFrameGenOn,
+            ["canFrameGen"] = p.CanFrameGen,
             ["videoFilters"] = p.GetRaw("vf"),
+            ["filteredFps"] = p.GetRaw("estimated-vf-fps"),
+            ["droppedFrames"] = p.GetRaw("frame-drop-count"),
             ["videoCodec"] = p.GetRaw("video-codec"),
             ["vo"] = p.GetRaw("current-vo"),
             ["audioTracks"] = p.AudioTracks.Count,

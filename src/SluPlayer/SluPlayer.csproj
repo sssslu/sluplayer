@@ -50,6 +50,14 @@
     <None Include="$(SluVendorDir)\ffmpeg\ffprobe.exe" Link="tools\ffprobe.exe" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="!Exists('$(SluVendorDir)\ffmpeg-shared\ffmpeg.exe') And Exists('$(SluVendorDir)\ffmpeg\ffprobe.exe')" />
     <!-- Khronos Vulkan loader: loaded only when Windows has none (MpvNative's static constructor). -->
     <None Include="$(SluVendorDir)\vulkan\vulkan-1.dll" Link="vulkan\vulkan-1.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\vulkan\vulkan-1.dll')" />
+    <!-- Frame generation runtime (Python, VapourSynth, RIFE): loaded only while the mode is used. -->
+    <None Include="$(SluVendorDir)\framegen\**\*" LinkBase="framegen" CopyToOutputDirectory="PreserveNewest" Visible="false" Condition="Exists('$(SluVendorDir)\framegen\python.exe')" />
+  </ItemGroup>
+
+  <!-- Frame generation: the script mpv's vapoursynth filter runs, and the runtime's Python path file. -->
+  <ItemGroup>
+    <None Update="Assets\FrameGen\framegen.vpy" Link="framegen\framegen.vpy" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Assets\FrameGen\python314._pth" Link="framegen\python314._pth" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

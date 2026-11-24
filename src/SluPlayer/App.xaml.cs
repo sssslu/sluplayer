@@ -68,6 +68,7 @@ public partial class App : Application
         Log.Info($"SluPlayer {typeof(App).Assembly.GetName().Version} starting; args: {string.Join(" | ", e.Args)}");
 
         HistoryService.Load();
+        Core.Player.FrameGenRuntime.Register(); // before mpv is created
         base.OnStartup(e);
 
         var window = new MainWindow(settings, e.Args);

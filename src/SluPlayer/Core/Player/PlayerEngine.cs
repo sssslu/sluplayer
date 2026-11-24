@@ -264,10 +264,13 @@ public sealed class PlayerEngine : ObservableObject
             _ui.BeginInvoke(() =>
             {
                 if (_mpv is not { } m) return;
-                SetUpscale(m, 0, refreshSeek: IsPaused);
+                UpdateFilters();
                 ShowOsd(UpscaleName + " 미지원", 2500);
             });
         }
+        // The script failed although the runtime had started: mpv has dropped this file's video with the filter.
+        if (level <= MpvLogLevel.Error && prefix.EndsWith("vapoursynth", StringComparison.Ordinal))
+            FailFrameGen(text.Trim(), reload: true);
         if (level <= MpvLogLevel.Error) Log.Error(line);
         else if (level <= MpvLogLevel.Warn) Log.Warn(line);
         else Log.Info(line);
@@ -288,7 +291,7 @@ public sealed class PlayerEngine : ObservableObject
         On("volume", MpvFormat.Double, v => Volume = v as double? ?? Volume);
         On("volume-max", MpvFormat.Double, v => VolumeMax = v as double? ?? VolumeMax);
         On("mute", MpvFormat.Flag, v => IsMuted = v is true);
-        On("speed", MpvFormat.Double, v => Speed = v as double? ?? 1);
+        On("speed", MpvFormat.Double, v => { Speed = v as double? ?? 1; UpdateFilters(); });
         On("media-title", MpvFormat.String, v => MediaTitle = v as string);
         On("path", MpvFormat.String, v => CurrentPath = v as string);
         On("dwidth", MpvFormat.Int64, v => VideoWidth = (int)(v as long? ?? 0));
@@ -305,7 +308,7 @@ public sealed class PlayerEngine : ObservableObject
         On("loop-playlist", MpvFormat.Node, v => UpdateLoop(null, playlistLoop: IsLoopOn(v)));
         On("metadata", MpvFormat.Node, v => Metadata = ToStringMap(v));
         // Source display size, rotation applied.
-        On("video-params", MpvFormat.Node, v => { SetSourceSize(v); UpdateUpscale(); });
+        On("video-params", MpvFormat.Node, v => { SetSourceSize(v); UpdateFilters(); });
 
         // ytdl_hook publishes yt-dlp's result here; keep the error to explain failed online streams.
         mpv.ObserveProperty("user-data/mpv/ytdl/json-subprocess-result", MpvFormat.Node, v =>
@@ -469,6 +472,7 @@ public sealed class PlayerEngine : ObservableObject
     private void OnStartFile()
     {
         IsLoading = true;
+        QuietFrameGenWatch();
         _firstRestartPending = true;
         EofReached = false;
         Position = 0;
@@ -504,13 +508,14 @@ public sealed class PlayerEngine : ObservableObject
     {
         // The file is being reopened (late video start): the reopened one reports its start instead.
         if (reopening) return;
+        QuietFrameGenWatch();
         if (_firstRestartPending)
         {
             _firstRestartPending = false;
             IsLoading = false;
             // Property notifications trail the events: read the new file's video size directly.
             SetSourceSize(_mpv?.GetPropertyNode("video-params"));
-            UpdateUpscale();
+            UpdateFilters();
             UpdateDerived();
             FlushPosition(force: true);
             MediaReady?.Invoke(this, EventArgs.Empty);
@@ -575,7 +580,7 @@ public sealed class PlayerEngine : ObservableObject
     private const double GapLandSlack = 0.25;
     private const string GapFillLabel = "@slugap";
     private const string GapFillFilter = GapFillLabel + ":lavfi=[fps=fps=source_fps:start_time=0]";
-    private readonly object _gapLock = new(); // this section's state and _upscale (event thread + UI thread)
+    private readonly object _gapLock = new(); // this section's state and the filter list (event thread + UI thread)
     private string? _gapPath;     // the loaded file starts its video _gapStart seconds after its audio
     private double _gapStart;
     private bool _gapReopening;   // a reopen of _gapPath was requested
@@ -594,10 +599,11 @@ public sealed class PlayerEngine : ObservableObject
             _seekTarget = null;
             _gapFilling = reopen;
             _upscale = 0;
+            _frameGen = default;
             if (!reopen) _gapPath = null;
             // The engine's filters belong to one load: this one starts with the fill filter or none. Set under the lock:
-            // a filter the UI thread still sends for the previous video must come before it or count as this load's.
-            mpv.SetProperty("vf", reopen ? GapFillFilter : "");
+            // a list the UI thread still sends for the previous video must come before it or count as this load's.
+            mpv.SetProperty("vf", Filters());
             return reopen;
         }
     }
@@ -665,8 +671,8 @@ public sealed class PlayerEngine : ObservableObject
             _seekTarget = target;
             if (!_gapFilling || target < _gapStart) return;
             _gapFilling = false;
+            _mpv?.CommandAsync("vf", "set", Filters());
         }
-        _mpv?.CommandAsync("vf", "remove", GapFillLabel);
     }
 
     /// <summary>
@@ -685,8 +691,8 @@ public sealed class PlayerEngine : ObservableObject
         {
             if (!_gapFilling) return;
             _gapFilling = false;
+            _mpv?.CommandAsync("vf", "set", Filters());
         }
-        _mpv?.CommandAsync("vf", "remove", GapFillLabel);
     }
 
     /// <summary>The loaded file is <paramref name="file"/>, or it is being reopened (late video start).</summary>
@@ -697,113 +703,298 @@ public sealed class PlayerEngine : ObservableObject
     }
 
     // =====================================================================
-    // Upscaling
+    // Frame generation and upscaling
     // =====================================================================
     //
-    // NVIDIA RTX Video Super Resolution through mpv's d3d11vpp filter: the driver scales each frame to about the screen
-    // size before mpv renders it. Nothing extra is loaded, and the filter is only in the chain while the mode is on and
-    // the video is smaller than the screen. Only offered on RTX cards (others have no such scaler: the menu item and the
-    // filter are left out), and dropped for good when the driver refuses it (old driver).
+    // The engine owns mpv's filter list. A load has up to three filters, always in this order: the gap fill (above),
+    // frame generation, upscaling. Every change sends the whole list, so the order never depends on what came first.
+    // Both modes are remembered settings: they apply to every video they can help, and nothing is loaded while off.
+    //
+    // Frame generation: RIFE (an optical-flow network, on the GPU through Vulkan) generates the frames between two
+    // source frames, in mpv's vapoursynth filter (Assets\FrameGen\framegen.vpy; runtime in <app>\framegen). The frame
+    // rate is multiplied up to about 60 fps, never past the screen's refresh rate: 24 -> 72, 30 -> 60, 16 -> 64.
+    // Videos of more than 31 fps, HDR and interlaced video are left alone (HDR: untested). The factor is lower when
+    // the load (pixels generated per second) is more than a fast card manages, and it is lowered when frames get
+    // dropped because the GPU does not keep up; that load is then not tried again until the mode is switched on again.
+    //
+    // Upscaling: NVIDIA RTX Video Super Resolution through mpv's d3d11vpp filter; the driver scales each frame to
+    // about the screen size before mpv renders it. Only offered on RTX cards (others have no such scaler: the menu
+    // item and the filter are left out), and dropped for good when the driver refuses it (old driver).
     // Measured with an RTX 4080 SUPER (2026-11): the driver leaves input below about 480x360 alone (the filter would
     // then only replace mpv's better scaler), and works on 8- and 10-bit SDR. HDR was not tested and is left alone.
+    // Its network scales by up to 2; past that the driver stretches the result with a plain scaler that is worse than
+    // mpv's (1080p film shrunk to 720x302 and brought back, VMAF against the original: 2.67x in the driver 66-77,
+    // mpv alone 74-82, 2x in the driver + mpv for the rest 75-84). So the filter never scales by more than 2.
     // Intel's VSR uses the same filter (scaling-mode=intel) but was never tested, so it is not offered.
 
+    public const string FrameGenName = "프레임 생성";
     public const string UpscaleName = "RTX 업스케일";
-    private const string UpscaleLabel = "@sluup";
+    private const string FrameGenLabel = "@slufg", UpscaleLabel = "@sluup";
+    private const double MinFrameGenFps = 5, MaxFrameGenFps = 31, FrameGenTargetFps = 60;
+    private const int MaxFrameGenFactor = 4;
+    // Pixels generated per second that no card is asked for. Measured with playback and upscaling running on an
+    // RTX 4080 SUPER (2026-11): 74 million kept up (1920x808 at 24 fps x3, 2560x1440 at 20 fps x2), 100 million did not
+    // (1920x1080 at 24 fps x3).
+    private const double FrameGenBudget = 90e6;
     private const long MinUpscalePixels = 480 * 360;
-    private const double MinUpscale = 1.2, MaxUpscale = 4;
+    private const double MinUpscale = 1.2, MaxUpscale = 2;
     private static readonly bool HasRtx = GpuInfo.RenderAdapter is { VendorId: GpuInfo.VendorNvidia } gpu
                                           && gpu.Name.Contains("RTX", StringComparison.OrdinalIgnoreCase);
     private nint _wid;
-    private double _upscale;              // scale of this load's filter, 0 = none (_gapLock)
-    private volatile bool _upscaleFailed; // the driver refused
 
+    /// <summary>A frame generation filter: the frame rate factor, the size limit (the screen, as the unrotated video
+    /// sees it) and the GPU load of one generated frame per source frame (pixels per second).</summary>
+    private readonly record struct FrameGen(int Factor, int MaxWidth, int MaxHeight, double Load);
+
+    private FrameGen _frameGen;           // this load's filter, Factor 0 = none (_gapLock)
+    private double _upscale;              // scale of this load's filter, 0 = none (_gapLock)
+    private volatile bool _frameGenFailed; // the runtime or RIFE cannot start on this PC
+    private volatile bool _upscaleFailed;  // the driver refused
+    private double _frameGenTooMuch = double.MaxValue; // generated pixels per second the GPU did not keep up with
+    private readonly DateTime _frameGenSince = DateTime.UtcNow; // an error file written after this is this session's
+    private long _fgQuietUntil;           // no watchdog samples before this (UTC ticks; set by seeks and filter changes)
+    private long _fgSampleAt;             // next watchdog sample (UTC ticks)
+    private long _fgDrops = -1;           // mpv's dropped-frame count at the last sample
+    private double _fgPos;                // playback position at the last sample
+    private int _fgLate;                  // samples in a row that dropped too many frames
+
+    public bool CanFrameGen => FrameGenRuntime.IsAvailable && !_frameGenFailed;
+    public bool IsFrameGenOn => _settings.FrameGen;
     public bool CanUpscale => HasRtx && !_upscaleFailed;
     public bool IsUpscaleOn => _settings.Upscale;
 
-    /// <summary>The mode applies to every video it can help, across restarts.</summary>
+    public void ToggleFrameGen()
+    {
+        var mpv = _mpv;
+        if (mpv == null || !CanFrameGen) return;
+        _settings.FrameGen = !_settings.FrameGen;
+        Volatile.Write(ref _frameGenTooMuch, double.MaxValue); // a fresh try
+        UpdateFilters();
+        int factor;
+        lock (_gapLock) factor = _frameGen.Factor;
+        double fps = mpv.GetPropertyDouble("container-fps") ?? 0;
+        ShowOsd(!_settings.FrameGen ? FrameGenName + " 끔"
+            : factor > 0 ? string.Create(Inv, $"{FrameGenName} 켬 ({Math.Round(fps * factor)}fps)")
+            : !HasVideo ? FrameGenName + " 켬"
+            : FrameGenName + " 켬 (이 영상 해당 없음)", 2000);
+    }
+
     public void ToggleUpscale()
     {
         if (_mpv == null || !CanUpscale) return;
         _settings.Upscale = !_settings.Upscale;
-        bool applied = UpdateUpscale();
+        UpdateFilters();
+        bool applied;
+        lock (_gapLock) applied = _upscale > 0;
         ShowOsd(!_settings.Upscale ? UpscaleName + " 끔"
             : applied || !HasVideo ? UpscaleName + " 켬"
             : UpscaleName + " 켬 (이 영상 해당 없음)", 2000);
     }
 
     /// <summary>
-    /// Event thread, on_preloaded (tracks known, nothing decoded yet): the filter is in place before the first frame.
-    /// With several video tracks it waits for the selected one to decode (<see cref="UpdateUpscale"/>).
+    /// Event thread, on_preloaded (tracks known, nothing decoded yet): the filters are in place before the first frame.
+    /// With several video tracks they wait for the selected one to decode (<see cref="UpdateFilters"/>).
     /// </summary>
     private void OnPreloadedHook()
     {
         var mpv = _mpv;
-        if (mpv == null || !_settings.Upscale || !CanUpscale) return;
+        if (mpv == null || !(_settings.FrameGen && CanFrameGen || _settings.Upscale && CanUpscale)) return;
         if (mpv.GetPropertyNode("track-list") is not List<object?> tracks) return;
         var videos = tracks.OfType<Dictionary<string, object?>>()
             .Where(t => t.GetString("type") == "video" && !t.GetBool("image") && !t.GetBool("albumart")).ToList();
         if (videos.Count != 1) return;
         var v = videos[0];
         double w = v.GetLong("demux-w") ?? 0, h = v.GetLong("demux-h") ?? 0, par = v.GetDouble("demux-par") ?? 1;
+        long rotate = v.GetLong("demux-rotation") ?? 0;
         // Display size the way mpv derives it: non-square pixels stretch the longer side.
         double dw = par > 1 ? w * par : w, dh = par > 0 && par < 1 ? h / par : h;
-        SetUpscale(mpv, UpscaleFor(w, h, dw, dh, v.GetLong("demux-rotation") ?? 0, null, null), refreshSeek: false);
+        SetFilters(mpv,
+            FrameGenFor(v.GetDouble("demux-fps") ?? 0, mpv.GetPropertyDouble("speed") ?? 1, w, h, rotate, null, false),
+            UpscaleFor(w, h, dw, dh, rotate, null, null), refreshSeek: false);
     }
 
-    /// <summary>UI thread: the filter for the video as it decodes (size and format are final). Returns true when it is on.</summary>
-    private bool UpdateUpscale()
+    /// <summary>UI thread: the filters for the video as it decodes (size, format and frame rate are final).</summary>
+    private void UpdateFilters()
     {
         var mpv = _mpv;
-        if (mpv == null) return false;
         // Before the first frame mpv only reports the container's w and h here: that is not the decoded video yet.
-        if (mpv.GetPropertyNode("video-params") is Dictionary<string, object?> p && p.GetString("pixelformat") is { } format)
+        if (mpv?.GetPropertyNode("video-params") is not Dictionary<string, object?> p || p.GetString("pixelformat") is not { } format) return;
+        // Pictures and cover art stay as they are.
+        if (mpv.GetPropertyString("current-tracks/video/image") != "no")
         {
-            // Pictures and cover art stay as they are.
-            bool video = mpv.GetPropertyString("current-tracks/video/image") == "no";
-            SetUpscale(mpv, !video ? 0 : UpscaleFor(p.GetLong("w") ?? 0, p.GetLong("h") ?? 0, p.GetLong("dw") ?? 0,
-                p.GetLong("dh") ?? 0, p.GetLong("rotate") ?? 0, p.GetString("hw-pixelformat") ?? format, p.GetString("gamma")),
-                refreshSeek: IsPaused);
+            SetFilters(mpv, default, 0, refreshSeek: IsPaused);
+            return;
         }
-        lock (_gapLock) return _upscale > 0;
+        long w = p.GetLong("w") ?? 0, h = p.GetLong("h") ?? 0, rotate = p.GetLong("rotate") ?? 0;
+        string? gamma = p.GetString("gamma");
+        SetFilters(mpv,
+            FrameGenFor(mpv.GetPropertyDouble("container-fps") ?? 0, Speed, w, h, rotate, gamma,
+                mpv.GetPropertyString("video-frame-info/interlaced") == "yes"),
+            UpscaleFor(w, h, p.GetLong("dw") ?? 0, p.GetLong("dh") ?? 0, rotate, p.GetString("hw-pixelformat") ?? format, gamma),
+            refreshSeek: IsPaused);
     }
 
-    /// <summary>The scale that brings the video to the screen's size, 0 when the filter should stay out.</summary>
+    /// <summary>The frame generation filter for a video of <paramref name="fps"/> frames per second, none (default) when it should stay out.</summary>
+    private FrameGen FrameGenFor(double fps, double speed, double w, double h, long rotate, string? gamma, bool interlaced)
+    {
+        if (!_settings.FrameGen || !CanFrameGen || w < 128 || h < 128 || gamma is "pq" or "hlg" || interlaced) return default;
+        double shown = fps * speed; // source frames per second on screen
+        if (shown < MinFrameGenFps || shown > MaxFrameGenFps || ScreenSize() is not { } screen) return default;
+        int hz = Win32.GetRefreshRate(_wid);
+        int factor = Math.Min(MaxFrameGenFactor, (int)Math.Ceiling(FrameGenTargetFps / shown - 0.01));
+        // No more frames than the screen shows.
+        while (factor > 1 && shown * factor > (hz > 0 ? hz : 60) + 1) factor--;
+        var (maxW, maxH) = rotate % 180 != 0 ? (screen.Height, screen.Width) : screen;
+        // The script generates at screen size when the video is larger.
+        double fit = Math.Min(1, Math.Min(maxW / w, maxH / h));
+        double load = w * h * fit * fit * shown;
+        double tooMuch = Math.Min(Volatile.Read(ref _frameGenTooMuch), FrameGenBudget);
+        while (factor > 1 && load * (factor - 1) >= tooMuch) factor--;
+        if (factor < 2) return default;
+        // The runtime must be running before its filter goes in.
+        if (!FrameGenRuntime.TryStart(out var error))
+        {
+            FailFrameGen(error!, reload: false);
+            return default;
+        }
+        return new FrameGen(factor, maxW, maxH, load);
+    }
+
+    /// <summary>The scale that brings the video towards the screen's size (mpv does the rest), 0 when the filter should stay out.</summary>
     /// <param name="format">Pixel format once decoded (null before): 4:2:0 only, the formats the filter passes through.</param>
     private double UpscaleFor(double w, double h, double dw, double dh, long rotate, string? format, string? gamma)
     {
         if (!_settings.Upscale || !CanUpscale || w * h < MinUpscalePixels || dw <= 0 || dh <= 0) return 0;
         if (gamma is "pq" or "hlg" || format is not (null or "nv12" or "p010" or "yuv420p" or "yuv420p10")) return 0;
-        // The monitor the player is on (physical pixels; mpv's display-width is not known before its first frame).
-        var info = new Win32.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32.MONITORINFO>() };
-        if (_wid == 0 || !Win32.GetMonitorInfo(Win32.MonitorFromWindow(_wid, Win32.MONITOR_DEFAULTTONEAREST), ref info)) return 0;
+        if (ScreenSize() is not { } screen) return 0;
         if (rotate % 180 != 0) (dw, dh) = (dh, dw);
-        double scale = Math.Min(Math.Min(info.rcMonitor.Width / dw, info.rcMonitor.Height / dh), MaxUpscale);
+        double scale = Math.Min(Math.Min(screen.Width / dw, screen.Height / dh), MaxUpscale);
         return scale < MinUpscale ? 0 : scale;
+    }
+
+    /// <summary>The monitor the player is on, in physical pixels (mpv's display-width is not known before its first frame).</summary>
+    private (int Width, int Height)? ScreenSize()
+    {
+        var info = new Win32.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<Win32.MONITORINFO>() };
+        if (_wid == 0 || !Win32.GetMonitorInfo(Win32.MonitorFromWindow(_wid, Win32.MONITOR_DEFAULTTONEAREST), ref info)) return null;
+        return info.rcMonitor.Width > 0 && info.rcMonitor.Height > 0 ? (info.rcMonitor.Width, info.rcMonitor.Height) : null;
+    }
+
+    /// <summary>The filter list of this load. Call with <see cref="_gapLock"/> held.</summary>
+    private string Filters()
+    {
+        var list = new List<string>(3);
+        if (_gapFilling) list.Add(GapFillFilter);
+        if (_frameGen.Factor > 0)
+            list.Add(FrameGenLabel + ":" + FrameGenRuntime.Filter(_frameGen.Factor, _frameGen.MaxWidth, _frameGen.MaxHeight));
+        if (_upscale > 0)
+            list.Add(string.Create(Inv, $"{UpscaleLabel}:d3d11vpp=scaling-mode=nvidia:scale={_upscale:0.###}"));
+        return string.Join(',', list);
     }
 
     /// <param name="refreshSeek">
     /// Paused: mpv seeks to the shown frame to run it through the new filters; that is no seek to the beginning
     /// (see <see cref="CheckVideoStartGap"/>).
     /// </param>
-    private void SetUpscale(MpvClient mpv, double scale, bool refreshSeek)
+    private void SetFilters(MpvClient mpv, FrameGen gen, double scale, bool refreshSeek)
     {
         lock (_gapLock)
         {
-            // The sizes known before and after decoding differ by rounding: that is the same filter.
-            if (scale == _upscale || scale > 0 && _upscale > 0 && Math.Abs(scale - _upscale) < 0.03) return;
-            _upscale = scale;
+            // The sizes known before and after decoding differ by rounding: that is the same upscale filter.
+            bool sameScale = scale == _upscale || scale > 0 && _upscale > 0 && Math.Abs(scale - _upscale) < 0.03;
+            bool sameGen = gen.Factor == _frameGen.Factor && gen.MaxWidth == _frameGen.MaxWidth && gen.MaxHeight == _frameGen.MaxHeight;
+            if (sameGen) _frameGen = gen; // the load may have changed with the playback speed
+            if (sameScale && sameGen) return;
+            if (!sameScale) _upscale = scale;
+            _frameGen = gen;
             if (refreshSeek) _seekTarget = double.MaxValue;
             // Sent under the lock: the event and UI threads must reach mpv in the order they decided.
-            if (scale <= 0) mpv.CommandAsync("vf", "remove", UpscaleLabel);
-            else mpv.CommandAsync("vf", "add", string.Create(Inv, $"{UpscaleLabel}:d3d11vpp=scaling-mode=nvidia:scale={scale:0.###}"));
+            mpv.CommandAsync("vf", "set", Filters());
         }
+        QuietFrameGenWatch();
+    }
+
+    /// <summary>Frames dropped right after a seek or a filter change say nothing about the GPU (RIFE is still starting).</summary>
+    private void QuietFrameGenWatch() => Interlocked.Exchange(ref _fgQuietUntil, DateTime.UtcNow.AddSeconds(1.5).Ticks);
+
+    /// <summary>
+    /// UI thread (position timer), about once a second while frames are generated: lowers the factor when mpv keeps
+    /// dropping frames (the GPU is too slow or busy), and gives up when RIFE could not start.
+    /// </summary>
+    private void WatchFrameGen()
+    {
+        FrameGen gen;
+        lock (_gapLock) gen = _frameGen;
+        long now = DateTime.UtcNow.Ticks;
+        if (gen.Factor == 0 || IsPaused || IsBuffering || IsLoading || EofReached || _mpv is not { } mpv
+            || now < Interlocked.Read(ref _fgQuietUntil))
+        {
+            _fgDrops = -1;
+            _fgLate = 0;
+            return;
+        }
+        if (now < _fgSampleAt) return;
+        _fgSampleAt = now + TimeSpan.TicksPerSecond;
+
+        try
+        {
+            if (File.GetLastWriteTimeUtc(FrameGenRuntime.ErrorFile) > _frameGenSince)
+            {
+                FailFrameGen(File.ReadAllText(FrameGenRuntime.ErrorFile).Trim(), reload: false);
+                return;
+            }
+        }
+        catch (IOException) { }
+
+        long drops = mpv.GetPropertyLong("frame-drop-count") ?? 0;
+        double pos = mpv.GetPropertyDouble("time-pos") ?? 0, played = pos - _fgPos;
+        long before = _fgDrops;
+        _fgDrops = drops;
+        _fgPos = pos;
+        // Only a second of steady playback counts: mpv also drops frames when a file ends or another one starts.
+        if (before < 0 || drops < before || played < 0.5 * Speed || played > 1.5 * Speed) { _fgLate = 0; return; }
+        double fps = mpv.GetPropertyDouble("container-fps") ?? 0;
+        double shown = fps * Speed * gen.Factor;
+        // A tenth of the frames two seconds in a row, or a third at once.
+        if (drops - before < shown * 0.1) { _fgLate = 0; return; }
+        if (++_fgLate < 2 && drops - before < shown / 3) return;
+        _fgLate = 0;
+        Volatile.Write(ref _frameGenTooMuch, Math.Min(Volatile.Read(ref _frameGenTooMuch), gen.Load * (gen.Factor - 1)));
+        UpdateFilters();
+        int factor;
+        lock (_gapLock) factor = _frameGen.Factor;
+        Log.Info($"frame generation: the GPU does not keep up at x{gen.Factor}; now x{factor}");
+        ShowOsd(factor > 0 ? string.Create(Inv, $"{FrameGenName} {Math.Round(fps * factor)}fps") : FrameGenName + " 중단", 2500);
+    }
+
+    /// <summary>Any thread. The mode goes away for this session: the menu item too.</summary>
+    /// <param name="reload">mpv dropped the video with the failed filter: open the file again without it.</param>
+    private void FailFrameGen(string reason, bool reload)
+    {
+        if (_frameGenFailed) return;
+        _frameGenFailed = true;
+        Log.Warn("frame generation is not available: " + reason);
+        _ui.BeginInvoke(() =>
+        {
+            if (_mpv is not { } mpv) return;
+            lock (_gapLock)
+            {
+                if (_frameGen.Factor > 0)
+                {
+                    _frameGen = default;
+                    mpv.CommandAsync("vf", "set", Filters());
+                }
+            }
+            if (reload) mpv.CommandAsync("playlist-play-index", "current");
+            ShowOsd(FrameGenName + " 미지원", 2500);
+        });
     }
 
     private void FlushPosition(bool force = false)
     {
         if (_mpv == null) return;
         EndGapFillWhenPast();
+        WatchFrameGen();
         if (Interlocked.Exchange(ref _timePosDirty, 0) == 1 || force)
         {
             var p = Volatile.Read(ref _latestTimePos);

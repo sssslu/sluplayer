@@ -21,6 +21,8 @@
          vulkan\vulkan-1.dll    official Khronos loader, only for PCs whose driver has none
          tools\                 yt-dlp\ (yt-dlp.exe + _internal\, the fast-starting "onedir" build),
                                 deno.exe, ffmpeg.exe, ffprobe.exe (+ FFmpeg DLLs)
+         framegen\              frame generation runtime: Python, VapourSynth, the RIFE plugin and model
+                                (vendor cache) plus framegen.vpy and python314._pth (this repository)
          licenses\              third-party licenses (build\licenses + NuGet package notices)
          README.txt             user guide (the part of README.md before the developer section)
     4. Zips the folder (top-level folder "SluPlayer\") and writes <zip>.sha256.
@@ -172,6 +174,10 @@ $vendorFiles = [ordered]@{
     'deno.exe'           = Join-Path $VendorDir 'deno\deno.exe'
     'ffmpeg.exe'         = Join-Path $VendorDir 'ffmpeg-shared\ffmpeg.exe'
     'ffprobe.exe'        = Join-Path $VendorDir 'ffmpeg-shared\ffprobe.exe'
+    'python314.dll'      = Join-Path $VendorDir 'framegen\python314.dll'
+    'vsscript.dll'       = Join-Path $VendorDir 'framegen\Lib\site-packages\vapoursynth\vsscript.dll'
+    'librife.dll'        = Join-Path $VendorDir 'framegen\rife\librife.dll'
+    'flownet.bin'        = Join-Path $VendorDir 'framegen\rife\rife-v4.15_lite_ensembleFalse\flownet.bin'
 }
 foreach ($k in $vendorFiles.Keys) {
     if (-not (Test-Path -LiteralPath $vendorFiles[$k])) { throw "Missing vendor file $($vendorFiles[$k]). Run build\fetch-vendor.ps1." }
@@ -232,6 +238,11 @@ Get-ChildItem -LiteralPath (Join-Path $toolsDir.FullName 'yt-dlp') -Recurse -Fil
     Where-Object { $_.Name -like '*.partial' -or $_.Name -match '\.bak-\d{8}-\d{6}$' } | Remove-Item -Force
 foreach ($k in 'deno.exe', 'ffmpeg.exe', 'ffprobe.exe') { Copy-Item -LiteralPath $vendorFiles[$k] -Destination $toolsDir.FullName }
 foreach ($dll in $ffmpegDlls) { Copy-Item -LiteralPath $dll.FullName -Destination $toolsDir.FullName }
+# Frame generation runtime, next to the two files dotnet publish put into framegen\ (the script, Python's path file).
+$fgDir = Join-Path $stageApp 'framegen'
+Copy-Item -Path (Join-Path $VendorDir 'framegen\*') -Destination $fgDir -Recurse -Force
+Get-ChildItem -LiteralPath $fgDir -Recurse -File |
+    Where-Object { $_.Name -like '*.partial' -or $_.Name -match '\.bak-\d{8}-\d{6}$' } | Remove-Item -Force
 
 # Licenses: the curated texts in build\licenses. NuGet packages (and the .NET runtime) are checked
 # against the versions those texts were taken from; anything new or different gets its own notice
@@ -317,7 +328,9 @@ if (Test-Path -LiteralPath $readmeMd) {
 
 # Sanity checks on the assembled folder.
 $mustExist = @('SluPlayer.exe', 'libmpv-2.dll', 'vulkan\vulkan-1.dll', 'tools\yt-dlp\yt-dlp.exe', 'tools\yt-dlp\_internal', 'tools\deno.exe',
-    'tools\ffmpeg.exe', 'tools\ffprobe.exe', 'licenses\THIRD-PARTY-NOTICES.txt')
+    'tools\ffmpeg.exe', 'tools\ffprobe.exe', 'licenses\THIRD-PARTY-NOTICES.txt',
+    'framegen\framegen.vpy', 'framegen\python314._pth', 'framegen\python.exe', 'framegen\python3.dll', 'framegen\python314.zip',
+    'framegen\Lib\site-packages\vapoursynth\vapoursynth.pyd', 'framegen\rife\rife-v4.15_lite_ensembleFalse\flownet.param')
 foreach ($m in $mustExist) { if (-not (Test-Path -LiteralPath (Join-Path $stageApp $m))) { throw "Release folder is missing $m" } }
 foreach ($k in $vendorFiles.Keys) {
     $copy = Get-ChildItem -LiteralPath $stageApp -Recurse -File -Filter $k | Select-Object -First 1

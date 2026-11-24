@@ -19,7 +19,7 @@
 | `*.sha256` | 파일 검증용 SHA-256 값 (필요할 때만) |
 
 ### 설치 순서
-1. [Releases](https://github.com/sssslu/sluplayer/releases/latest) 페이지 아래 **Assets**에서 `SluPlayer-Setup-<버전>.exe`를 받는다(약 240 MB).
+1. [Releases](https://github.com/sssslu/sluplayer/releases/latest) 페이지 아래 **Assets**에서 `SluPlayer-Setup-<버전>.exe`를 받는다(약 265 MB).
 2. 브라우저가 "흔히 다운로드되지 않는 파일"이라고 막으면 다운로드 목록에서 **[유지]**(Edge: `…` → 유지 → 그래도 계속)를 누른다.
 3. 받은 파일을 실행한다. **"Windows의 PC 보호"** 창이 뜨면 **[추가 정보] → [실행]**. 디지털 서명이 없어서 뜨는 창이다.
 4. **[설치]**. 관리자 권한은 필요 없다. 설치 위치: `%LOCALAPPDATA%\Programs\SluPlayer`.
@@ -47,6 +47,7 @@ PowerShell에서 `(Get-FileHash .\SluPlayer-Setup-<버전>.exe).Hash`를 실행�
 - **재생**: MP4, MKV, AVI, MOV, WebM, TS/M2TS, FLV, WMV 등. H.264, HEVC, AV1, VP9 등. 4K, 10비트, HDR10(Windows HDR이 켜져 있으면 HDR 출력, 꺼져 있으면 톤 매핑)
 - **음악**: MP3, FLAC, M4A, Opus, OGG, WAV 등. 앨범 커버 표시
 - **GPU 가속**: Direct3D 11 렌더링 + 하드웨어 디코딩(d3d11va, NVDEC) 자동. GPU가 두 개면 고성능 GPU 사용
+- **프레임 생성**: 우클릭 → **프레임 생성**. 30fps 이하 영상의 중간 프레임을 그래픽 카드(RIFE)로 만들어 60fps 안팎으로 재생한다
 - **RTX 업스케일**: 우클릭 → **RTX 업스케일**. 화면보다 작은 영상을 NVIDIA RTX Video Super Resolution으로 키운다(RTX 그래픽 카드 전용)
 - 이어 보기, 같은 폴더 파일 자동 재생목록, 재생 속도, 반복·무작위, 챕터, 스크린샷, 회전, 화면 비율
 - **자막**: SRT, SMI, ASS/SSA, VTT, 내장 자막. 한국어 우선, CP949(EUC-KR) 지원. 싱크·크기 조절
@@ -103,11 +104,19 @@ YouTube가 봇 확인을 요구하면 다운로드와 URL 재생이 실패한다
 ### GPU 가속 확인
 우클릭 → 영상 → 하드웨어 가속 → "현재" 항목. `d3d11va`·`nvdec`이면 GPU 디코딩, `CPU`면 소프트웨어 디코딩. 그래픽 카드가 코덱을 지원하지 않으면(예: 오래된 GPU의 AV1) 자동으로 CPU를 쓴다.
 
+### 프레임 생성
+- 우클릭 메뉴에서 켜고 끈다. 켜 두면 다음 영상에도 적용된다.
+- 약 30fps 이하 영상의 프레임 수를 2~4배로 늘린다. 60fps 안팎, 화면 주사율 이하까지. 예: 24→72, 30→60, 16→64.
+- Vulkan을 지원하는 그래픽 카드가 필요하다(NVIDIA·AMD·Intel). 쓸 수 없으면 "프레임 생성 미지원"이 뜬 뒤 꺼진다.
+- 영상이 클수록 무겁다. 그래픽 카드가 따라오지 못하면 배수를 낮추거나 멈춘다. RTX 4080 SUPER 기준: 1080p 24fps는 2배(48fps), 그보다 작은 영상은 3~4배.
+- 화면보다 큰 영상은 화면 크기로 줄여서 만든다. 31fps를 넘는 영상, HDR, 인터레이스 영상에는 적용하지 않는다.
+- 영상을 열거나 이동한 직후 1초쯤은 원본 프레임으로 재생하다가 이어서 적용된다.
+
 ### RTX 업스케일
 - 우클릭 메뉴에서 켜고 끈다. 켜 두면 다음 영상에도 적용된다.
 - NVIDIA RTX 그래픽 카드(RTX 20 시리즈 이상)와 최신 드라이버가 필요하다. 다른 그래픽 카드에서는 메뉴에 나오지 않고, 드라이버가 거부하면 "RTX 업스케일 미지원"이 뜬 뒤 꺼진다.
 - 적용 대상: 화면보다 작은 SDR 영상(약 480×360 이상). 화면 크기 이상이거나 HDR이면 원본 그대로 재생한다.
-- 프레임 생성(DLSS 프레임 생성 같은 기능)은 없다. 게임용 기술이라 영상에는 쓸 수 없다.
+- 드라이버에는 2배까지만 맡기고 나머지는 플레이어가 확대한다. 드라이버는 2배를 넘는 부분을 흐리게 늘린다.
 
 ### "vulkan-1.dll이 없어서 실행할 수 없다" 오류
 그래픽 드라이버가 없는 PC(가상 머신 등)에서 난다. 그래픽 카드 제조사의 최신 드라이버나 [LunarG Vulkan Runtime](https://vulkan.lunarg.com/sdk/home) 설치.
@@ -130,11 +139,11 @@ YouTube가 봇 확인을 요구하면 다운로드와 URL 재생이 실패한다
 - **화면이 검거나 깨짐**: 그래픽 드라이버 업데이트. 그래도 같으면 Ctrl+H로 하드웨어 가속 끄기.
 - **영상이 끊김**: 하드웨어 가속 확인(위 참고). 노트북은 전원 연결.
 - **소리 없음**: 음소거(M)와 볼륨 확인.
-- **실행 안 됨**: 압축을 모두 풀었는지 확인. 백신이 `tools` 폴더 파일(yt-dlp, deno, ffmpeg)을 지웠다면 다시 풀거나 다시 설치.
+- **실행 안 됨**: 압축을 모두 풀었는지 확인. 백신이 `tools`·`framegen` 폴더 파일(yt-dlp, deno, ffmpeg, python)을 지웠다면 다시 풀거나 다시 설치.
 - **창이 화면 밖**: SluPlayer를 끄고 `%APPDATA%\SluPlayer\settings.json`에서 `"window"` 항목 삭제.
 
 ## 라이선스
-SluPlayer는 [GPL-3.0](LICENSE). mpv, FFmpeg, yt-dlp, Deno, Vulkan 로더, .NET 등 오픈소스 포함. 라이선스와 소스 위치: 설치 폴더의 `licenses\THIRD-PARTY-NOTICES.txt`. mpv와 FFmpeg는 GPL.
+SluPlayer는 [GPL-3.0](LICENSE). mpv, FFmpeg, yt-dlp, Deno, VapourSynth, Python, RIFE, Vulkan 로더, .NET 등 오픈소스 포함. 라이선스와 소스 위치: 설치 폴더의 `licenses\THIRD-PARTY-NOTICES.txt`. mpv와 FFmpeg는 GPL.
 
 - 소스: https://github.com/sssslu/sluplayer
 - 버그·건의: [Issues](https://github.com/sssslu/sluplayer/issues)
@@ -155,7 +164,7 @@ cd sluplayer
 ### 준비물
 - Windows 10/11 x64, Windows PowerShell 5.1
 - .NET SDK 10. 사용자 폴더 설치 가능(`%LOCALAPPDATA%\Microsoft\dotnet`, 스크립트가 자동으로 찾는다).
-- 첫 빌드 때 인터넷(외부 바이너리 약 230 MB)
+- 첫 빌드 때 인터넷(외부 바이너리 약 280 MB)
 
 ### 1. 외부 바이너리
 ```powershell
@@ -171,6 +180,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build\fetch-vendor.ps1
 | Deno | 2.9.8 (yt-dlp가 YouTube에 사용) | `deno\deno.exe` |
 | FFmpeg | N-127043-g5a54fcf75e (yt-dlp/FFmpeg-Builds, gpl shared) | `ffmpeg-shared\` |
 | Vulkan 로더 | 1.4.363.0 (LunarG, 서명됨) | `vulkan\vulkan-1.dll` |
+| Python | 3.14.8 임베드 패키지 (프레임 생성 스크립트 실행) | `framegen\` |
+| VapourSynth | R82 (mpv의 vapoursynth 필터가 쓰는 파일만) | `framegen\Lib\site-packages\vapoursynth\` |
+| RIFE 플러그인 + 모델 | VapourSynth-RIFE-ncnn-Vulkan r9_mod_v33, rife-v4.15-lite | `framegen\rife\` |
 
 - `-Verify`: 각 도구를 한 번씩 실행해 확인.
 - `-Latest`: 상위 프로젝트의 최신 버전과 SHA-256 출력(핀 갱신용, 다운로드 안 함).
@@ -208,6 +220,7 @@ libmpv-2.dll             재생 엔진
 vulkan\vulkan-1.dll      Vulkan 로더 (드라이버에 없을 때만 사용)
 tools\yt-dlp\            yt-dlp.exe + _internal\ (다운로드 엔진)
 tools\                   deno.exe, ffmpeg.exe, ffprobe.exe, FFmpeg DLL
+framegen\                프레임 생성 런타임 (Python, VapourSynth, RIFE) + framegen.vpy
 licenses\                오픈소스 라이선스
 README.txt               이 문서의 사용자용 부분
 ```

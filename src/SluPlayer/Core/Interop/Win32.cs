@@ -169,6 +169,29 @@ internal static partial class Win32
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     public static extern bool GetMonitorInfo(nint monitor, ref MONITORINFO info);
 
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW")]
+    private static extern unsafe bool GetMonitorInfoEx(nint monitor, byte* info);
+
+    [DllImport("user32.dll", EntryPoint = "EnumDisplaySettingsW")]
+    private static extern unsafe bool EnumDisplaySettings(char* device, int mode, byte* devMode);
+
+    /// <summary>Refresh rate (Hz) of the monitor a window is on, 0 when unknown.</summary>
+    public static unsafe int GetRefreshRate(nint hwnd)
+    {
+        // MONITORINFOEXW: MONITORINFO (40 bytes) + szDevice[32]. DEVMODEW: 220 bytes, dmSize at 68, dmDisplayFrequency at 184.
+        const int infoSize = 104, modeSize = 220, currentSettings = -1;
+        byte* info = stackalloc byte[infoSize];
+        new Span<byte>(info, infoSize).Clear();
+        *(int*)info = infoSize;
+        if (hwnd == 0 || !GetMonitorInfoEx(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), info)) return 0;
+        byte* mode = stackalloc byte[modeSize];
+        new Span<byte>(mode, modeSize).Clear();
+        *(ushort*)(mode + 68) = modeSize;
+        if (!EnumDisplaySettings((char*)(info + 40), currentSettings, mode)) return 0;
+        int hz = *(int*)(mode + 184);
+        return hz > 1 ? hz : 0; // 0 and 1 stand for "the display's default rate"
+    }
+
     [DllImport("user32.dll")]
     public static extern bool SetForegroundWindow(nint hwnd);
 

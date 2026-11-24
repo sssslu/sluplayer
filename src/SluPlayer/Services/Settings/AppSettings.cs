@@ -41,6 +41,8 @@ public sealed class AppSettings
     public bool Shuffle { get; set; }
     /// <summary>RTX 업스케일: NVIDIA RTX Video Super Resolution for videos smaller than the screen (RTX cards only).</summary>
     public bool Upscale { get; set; }
+    /// <summary>프레임 생성: frames generated between the video's own (RIFE), for videos of up to about 30 fps.</summary>
+    public bool FrameGen { get; set; }
     public bool PlaylistPanelOpen { get; set; }
     public DateTime LastYtDlpUpdateCheck { get; set; }
 }

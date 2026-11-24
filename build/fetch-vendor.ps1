@@ -28,17 +28,25 @@
                     av*.dll, sw*.dll, LICENSE.txt   ~185 MB instead of 2 x 170 MB static exes)
       vulkan\vulkan-1.dll, VulkanRT-License.txt   official Khronos/LunarG loader, used only as a
                                                   fallback when Windows has none (see README)
+      framegen\                                   frame generation runtime, laid out as it ships
+                                                  (python314._pth and framegen.vpy come from the repo):
+        python.exe, python3*.dll, *.pyd, ...      Python 3.14 embeddable package (VapourSynth scripts run in it)
+        Lib\site-packages\vapoursynth\            VapourSynth R82: what mpv's vapoursynth filter needs
+        rife\librife.dll,                         RIFE (ncnn, Vulkan) VapourSynth plugin and its model
+        rifeife-v4.15_lite_ensembleFalse\       (the plugin reads the model's version from the folder name)
 
     Upstream retention (when a pinned URL starts returning 404, bump the pin; -Latest helps):
       - shinchiro/mpv-winbuild-cmake keeps roughly the last 30 GitHub releases (about one month).
       - yt-dlp/FFmpeg-Builds keeps daily builds for ~2 weeks and the last build of every month for
         ~2 years, so a month-end build is pinned.
-      - yt-dlp, Deno and LunarG releases are permanent.
+      - yt-dlp, Deno and LunarG releases are permanent, and so are python.org's, VapourSynth's and the RIFE
+        plugin's (its model files are read from the repository at the release tag).
 
 .PARAMETER VendorDir
     Vendor cache. Default: %LOCALAPPDATA%\SluPlayerDev\vendor (what Directory.Build.props uses).
 .PARAMETER Only
-    Restrict to some components: libmpv, yt-dlp, yt-dlp-exe, deno, ffmpeg, vulkan.
+    Restrict to some components: libmpv, yt-dlp, yt-dlp-exe, deno, ffmpeg, vulkan, python, vapoursynth, rife,
+    rife-model, rife-model-param.
 .PARAMETER Force
     Replace files that do not match their pin (the old file is kept as *.bak-<timestamp>).
 .PARAMETER Verify
@@ -71,6 +79,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 # ---------------------------------------------------------------------------------------------
 # Pins. Url/Sha256 = the downloaded file; Files = what is taken out of it: @(member, target, sha256).
 # For a plain file download (no archive) the member is '' and the download itself is the target.
+# Inner = @(member, sha256): the files are in an archive inside the download (a Python wheel in a zip).
 # Tree = the whole archive is the component; its extracted folder must have this tree hash.
 # ---------------------------------------------------------------------------------------------
 $ff = 'ffmpeg-N-127043-g5a54fcf75e-win64-gpl-shared'
@@ -153,6 +162,111 @@ $Pins = @(
         Files   = @(
             , @("$vk/x64/vulkan-1.dll", 'vulkan-1.dll', 'e1fcfc9489beefa6a6d9d11d6c7517f6a2b7f16e0d3fb8f4103bee0210f314a3')
             , @("$vk/VulkanRT-License.txt", 'VulkanRT-License.txt', '404deb98dabf3e54bf9070d59676b31d69a3da2f9f6e56bdf09ad315c04c718c')
+        )
+    }
+    @{
+        Name    = 'python'
+        Dir     = 'framegen'
+        Version = 'Python 3.14.8 (embeddable package, amd64)'
+        License = 'PSF-2.0 (LICENSE.txt in the package)'
+        Url     = 'https://www.python.org/ftp/python/3.14.8/python-3.14.8-embed-amd64.zip'
+        Sha256  = 'a93abe456ab01bd96d7a085b3cdb6566b3063f4241360d114142fbdb07f0a310'
+        # Everything but python314._pth (the repo has its own: it adds Lib\site-packages).
+        Files   = @(
+            , @('python.exe', 'python.exe', '434b361fe0c5960d404974feed493db47f2603a1ace2574312104fbed0182c6f')
+            , @('pythonw.exe', 'pythonw.exe', '4e24680bce514188c85ae91323691dcb0364990da0d6319558519e50cbb5a43c')
+            , @('python314.dll', 'python314.dll', '854fe7549eb4b2ac478935a38ae2ca1b774c6fdc3d87f0263fbd697ff86d7149')
+            , @('python3.dll', 'python3.dll', 'f9acdbcf3383a52353f8d7db3cbda3d3701b1cf7ac3053985fdac766c29e7808')
+            , @('vcruntime140.dll', 'vcruntime140.dll', 'd1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7')
+            , @('vcruntime140_1.dll', 'vcruntime140_1.dll', 'a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e')
+            , @('LICENSE.txt', 'LICENSE.txt', '935cf13e19f8c31b497d20b05d73623431a226b230c3599bc30fa3348979bc68')
+            , @('pyexpat.pyd', 'pyexpat.pyd', '36d775e2c2fa5bbda86ddc7c6ea632414df04f7a403b9e17587c99088d29cd7b')
+            , @('select.pyd', 'select.pyd', 'a341519a00befc3b86dfddf5938915fed52ded1ad5aab518c57d0b3c8969e835')
+            , @('unicodedata.pyd', 'unicodedata.pyd', '0527fee5192ab4567451d1296533600661571f6ebf9e8f4e0f60b63a4a4fd2e8')
+            , @('winsound.pyd', 'winsound.pyd', '7681b4d88ac96763bb89f018d1c658feeca782d8bfc6d223b06d2ef125780579')
+            , @('_asyncio.pyd', '_asyncio.pyd', '58b3e50104db6bf9d76e3d8106f9f477d34109a887d547ee086b0289e6a4e224')
+            , @('_bz2.pyd', '_bz2.pyd', 'b02f580daa0b390b2228d2a8186ef119be658c89cc64d0bd909550786ed993f2')
+            , @('_ctypes.pyd', '_ctypes.pyd', 'b96680c6bcad9e9403711ec0977866325e8e5aab93b56e83c3df6280ae72a82a')
+            , @('_decimal.pyd', '_decimal.pyd', '196c42414c16e804874988783b8a356bf1d012d32e99efbc6e360e94920c46ec')
+            , @('_elementtree.pyd', '_elementtree.pyd', '31aff8dca815a05904b5d3020fbdd5bdb596b6a07a36f31728996f28e06dab24')
+            , @('_hashlib.pyd', '_hashlib.pyd', '5dee7b9fff3e6d0abe20601b9e62f3a14cd048167ee0b80781131dc81dec9469')
+            , @('_lzma.pyd', '_lzma.pyd', '9099ef451fe61d8feef9e02894902b88fdc8ee404e3f8b7412b150878c973803')
+            , @('_multiprocessing.pyd', '_multiprocessing.pyd', '18041441b3f558925f903bc7af644a4d84b1cd746a4998748b4fffd82e767a6b')
+            , @('_overlapped.pyd', '_overlapped.pyd', 'eca5d3df23b762c846801194b6c971aae4eb288e1fc2914752b3a6c2df5aebfb')
+            , @('_queue.pyd', '_queue.pyd', '1e2e1ede7eeaf30a80ece546420dec67a02716e25d3a7c638e4deb0c21e973a1')
+            , @('_remote_debugging.pyd', '_remote_debugging.pyd', '0497ee6846cd92419ada56c091ab675ab6896ad3bfdcf88eec4dcda2cdfd5a4d')
+            , @('_socket.pyd', '_socket.pyd', '18a77c4e1f4a71ca60b9dbbba809e98cd324f3e1470d091689b87754a8c65588')
+            , @('_sqlite3.pyd', '_sqlite3.pyd', 'e69caeadb409777bce26f78622653558bbb86f08479b412399eaa0e6fd1e44f1')
+            , @('_ssl.pyd', '_ssl.pyd', '49df86fe76ed8fd97bb11a485286b49f5f5ebe953383648976a39c9de6f0524d')
+            , @('_uuid.pyd', '_uuid.pyd', '7e2cdd954b44b1be1fac1c354f774dab5f5becfce59688e62338427b125c62bf')
+            , @('_wmi.pyd', '_wmi.pyd', '5366924c1c96d9c9f82f95967fbf73244d4b4930f39103d7e7ba2b01046e0a46')
+            , @('_zoneinfo.pyd', '_zoneinfo.pyd', 'cdf82faa904e557b847a0ac6e97b4274945615fdbd319a28bcaa1f70f740636f')
+            , @('_zstd.pyd', '_zstd.pyd', '526d977236cc63895902977f216bf3ca93a4233489240656b295eafb6f518d07')
+            , @('libcrypto-3.dll', 'libcrypto-3.dll', '75495fe0e079ab00d49be740d3c710a0b94e3f74f9648cb7cc9f768fc7f52319')
+            , @('libffi-8.dll', 'libffi-8.dll', 'eff52743773eb550fcc6ce3efc37c85724502233b6b002a35496d828bd7b280a')
+            , @('libssl-3.dll', 'libssl-3.dll', '8957182a9c385bfd9f3f790921de2ddc614cf91f99edbed4e9e5446a46504e32')
+            , @('libtommath.dll', 'libtommath.dll', 'aaea8a20db7a7a96d4bef74ad724c4a02595a9c47659f6cbd6f145af0c97aa78')
+            , @('sqlite3.dll', 'sqlite3.dll', '5c47df970d2e8cc41239754ff167056fcecb1089f876736e51dab5d89f980300')
+            , @('python314.zip', 'python314.zip', 'dfa08b46ce09089b7e6bc139784d5609a07770bab66df8d37938ca9bd508e436')
+            , @('python.cat', 'python.cat', '8d723cf908852e0ae02d6ad4451a0214ce7c7a09aa6d9a4a7fc48024583f8494')
+        )
+    }
+    @{
+        Name    = 'vapoursynth'
+        Dir     = 'framegen'
+        Version = 'VapourSynth R82 (official portable zip; the Python wheel inside it)'
+        License = 'LGPL-2.1-or-later'
+        Url     = 'https://github.com/vapoursynth/vapoursynth/releases/download/R82/VapourSynth64-Portable-R82.zip'
+        Sha256  = 'f97ea50c4c9f778eeac4bc4e3e43f86fb3b71787371d06e584e0c47f396874ca'
+        Inner   = @('wheel/vapoursynth-82-cp312-abi3-win_amd64.whl', 'dbde9930d4e85de4eb220e05a0314edb7469b9016c5c58a279844b90da4a32b1')
+        # Without the debug symbols, vspipe, the VfW/Avisynth bridges and the headers.
+        Files   = @(
+            , @('vapoursynth/__init__.py', 'Lib\site-packages\vapoursynth\__init__.py', 'ca517623ccd5c82ff4d1c4c4d9b00ee0e9ecf176fec0448911cf0e847d2055c1')
+            , @('vapoursynth/__main__.py', 'Lib\site-packages\vapoursynth\__main__.py', 'a2f9fcbfa43be79e692ffc019ed1fc1a24903df82e83cf67827e876f7c95fe97')
+            , @('vapoursynth/_cli.py', 'Lib\site-packages\vapoursynth\_cli.py', '9b05f5fa5a398a6ba663ea6ef16e352db6b7eb16df130ebd79c613e1081f4bc7')
+            , @('vapoursynth/_shell.py', 'Lib\site-packages\vapoursynth\_shell.py', '36dee2a930cc54e6b90a8f9eb04f24ceddc133f6f6747604f34b869543b0af6e')
+            , @('vapoursynth/_utils.py', 'Lib\site-packages\vapoursynth\_utils.py', 'a692aab1feb976b3d1e93a55d80d051b29f1afcc0bfad33a4019b136d3a63eab')
+            , @('vapoursynth/vapoursynth.pyd', 'Lib\site-packages\vapoursynth\vapoursynth.pyd', '103b77c58ae70c66f398e32f5b600329dae030e6808adaab8cffbd237a8aa656')
+            , @('vapoursynth/vsscript.dll', 'Lib\site-packages\vapoursynth\vsscript.dll', '97c095603191daf0b3d4faf0f393fc2b267f0d1d8f3e09cb764f5162104dc775')
+            , @('vapoursynth/libvapoursynth.dll', 'Lib\site-packages\vapoursynth\libvapoursynth.dll', '7085e291aa73fb60515b22fe87d0b76fa5b076cd069f2e49aebadf8b93bacb63')
+            , @('vapoursynth/libvapoursynthfilters.dll', 'Lib\site-packages\vapoursynth\libvapoursynthfilters.dll', '009f9a4bfa9bb81bae1e6f9a6033731e9296dce71d1ead172a90f9635fb3713f')
+            , @('vapoursynth/libvapoursynthfilters_avx2.dll', 'Lib\site-packages\vapoursynth\libvapoursynthfilters_avx2.dll', '710cf75759db8a0c6e006e3492fd6583be88af6beb2fd8588ca3a330537aaa35')
+            , @('vapoursynth/libvapoursynthfilters_zn4.dll', 'Lib\site-packages\vapoursynth\libvapoursynthfilters_zn4.dll', '818925c648f8fa1f8784f133bb6fd9dda283ae3c54325a8284e30200316fc4d9')
+        )
+    }
+    @{
+        Name    = 'rife'
+        Dir     = 'framegen'
+        Version = 'VapourSynth-RIFE-ncnn-Vulkan r9_mod_v33 (styler00dollar, Windows x86-64 build)'
+        License = 'MIT (plugin) / BSD-3-Clause (ncnn)'
+        Url     = 'https://github.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan/releases/download/r9_mod_v33/librife_windows_x86-64.dll'
+        Sha256  = '36a25b471be88e6f915320c818022dc8657dd9beac22a8c3158bd7f4260cc410'
+        Files   = @(
+            , @('', 'rife\librife.dll', '36a25b471be88e6f915320c818022dc8657dd9beac22a8c3158bd7f4260cc410')
+        )
+    }
+    @{
+        # Chosen by measurement (2026-11, RTX 4080 SUPER): as close to dropped film frames as v4.25/v4.26
+        # (PSNR 31.7 / 30.4 dB at x2 / x3) and about 30 % faster (120 against 93 megapixels generated per second).
+        Name    = 'rife-model'
+        Dir     = 'framegen'
+        Version = 'RIFE v4.15 lite (ncnn weights from the plugin repository, tag r9_mod_v33)'
+        License = 'MIT'
+        Url     = 'https://raw.githubusercontent.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan/r9_mod_v33/models/rife-v4.15_lite_ensembleFalse/flownet.bin'
+        Sha256  = '700f6d15fc365dfd99a8fb7b4f9986708d4e9fb89844f3ddc4b56e7f30d16cda'
+        Files   = @(
+            , @('', 'rife\rife-v4.15_lite_ensembleFalse\flownet.bin', '700f6d15fc365dfd99a8fb7b4f9986708d4e9fb89844f3ddc4b56e7f30d16cda')
+        )
+    }
+    @{
+        Name    = 'rife-model-param'
+        Dir     = 'framegen'
+        Version = 'RIFE v4.15 lite (network description)'
+        License = 'MIT'
+        Url     = 'https://raw.githubusercontent.com/styler00dollar/VapourSynth-RIFE-ncnn-Vulkan/r9_mod_v33/models/rife-v4.15_lite_ensembleFalse/flownet.param'
+        Sha256  = '9f1018d743a40d774b5b2276bf7fdcf99417df2ef1486563f61723ae15bc149d'
+        Files   = @(
+            , @('', 'rife\rife-v4.15_lite_ensembleFalse\flownet.param', '9f1018d743a40d774b5b2276bf7fdcf99417df2ef1486563f61723ae15bc149d')
         )
     }
 )
@@ -384,6 +498,14 @@ function Sync-Component([hashtable]$Pin) {
 
     $result = Get-PinnedArchive $Pin
     $archive = Get-ArchivePath $Pin
+    if ($Pin.ContainsKey('Inner')) {
+        $inner = Join-Path (Split-Path -Parent $archive) (Split-Path -Leaf $Pin.Inner[0])
+        if (-not ((Test-Path -LiteralPath $inner) -and ((Get-Sha256 $inner) -eq $Pin.Inner[1]))) {
+            Expand-FromZip $archive @(, @($Pin.Inner[0], (Split-Path -Leaf $inner), $Pin.Inner[1])) (Split-Path -Parent $archive)
+        }
+        $archive = $inner
+        $fileName = 'inner.zip'
+    }
     $members = @($todo | ForEach-Object { , @($_.Member, $_.Target, $_.Sha256) })
     if ($fileName.EndsWith('.7z')) { Expand-From7z $archive $members $dir (Split-Path -Parent $archive) }
     else { Expand-FromZip $archive $members $dir }

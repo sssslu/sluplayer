@@ -58,6 +58,7 @@ public static class PlayerMenu
         if (p.IsNetworkStream && p.CurrentPath is { } streamUrl)
             items.Add(Item("이 영상 다운로드", "Icon.Download", () => shell.DownloadUrl(streamUrl)));
         items.Add(new Separator());
+        if (p.CanFrameGen) items.Add(Check(PlayerEngine.FrameGenName, p.IsFrameGenOn, () => { p.ToggleFrameGen(); shell.SaveSettings(); }));
         if (p.CanUpscale) items.Add(Check(PlayerEngine.UpscaleName, p.IsUpscaleOn, () => { p.ToggleUpscale(); shell.SaveSettings(); }));
         items.Add(Check("항상 위", shell.Settings.OnTop != OnTopMode.Never, shell.ToggleOnTop, "Ctrl+T"));
         items.Add(Check("전체 화면", shell.IsFullscreen, shell.ToggleFullscreen, "Enter"));

@@ -60,6 +60,25 @@ CommunityToolkit.Mvvm (inside SluPlayer.exe)                         folder: com
   Version : 8.4.2
   License : MIT (communitytoolkit-mvvm\License.md, ThirdPartyNotices.txt).
 
+VapourSynth (framegen\Lib\site-packages\vapoursynth\)               folder: vapoursynth\
+  Version : R82 (the Python wheel from the official portable package)
+  License : LGPL-2.1-or-later (vapoursynth\COPYING.LESSER.txt). Runs the frame generation
+            script inside mpv's vapoursynth filter. Source code:
+            https://github.com/vapoursynth/vapoursynth/tree/R82
+
+Python (framegen\python*.dll, *.pyd, python314.zip, ...)             folder: python\
+  Version : 3.14.8, official "embeddable package" for Windows amd64 (unmodified except for
+            python314._pth, which adds Lib\site-packages)
+  License : PSF License Agreement and the licenses of the bundled libraries
+            (python\LICENSE.txt, also shipped as framegen\LICENSE.txt).
+
+RIFE for VapourSynth (framegen\rife\)                                folder: rife\
+  Version : VapourSynth-RIFE-ncnn-Vulkan r9_mod_v33 (Windows x86-64 build by styler00dollar)
+            with the RIFE v4.15 lite model
+  License : MIT (plugin: rife\LICENSE-plugin.txt; RIFE and its models: rife\LICENSE-RIFE.txt).
+            The plugin contains ncnn (BSD-3-Clause and third-party notices:
+            rife\LICENSE-ncnn.txt).
+
 Microsoft Edge WebView2 SDK (inside SluPlayer.exe and WebView2Loader.dll)   folder: webview2\
   Version : 1.0.4314.35
   License : see webview2\LICENSE.txt and webview2\NOTICE.txt. The WebView2 Runtime itself
