@@ -10,7 +10,7 @@
 
 ### **[최신 버전 받기 (Releases)](https://github.com/sssslu/sluplayer/releases/latest)**
 
-최신 버전 **1.2.0**: RTX 업스케일 추가, 우클릭 메뉴로 연 설정·다운로드 창이 가려지던 문제 수정. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.2.0)
+최신 버전 **1.3.0**: 프레임 생성 추가, RTX 업스케일 화질 개선. [변경 사항](https://github.com/sssslu/sluplayer/releases/tag/v1.3.0)
 
 | 파일 | 설명 |
 |---|---|
